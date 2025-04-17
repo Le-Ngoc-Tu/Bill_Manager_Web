@@ -1,0 +1,18 @@
+/* Custom gradient styles for sidebar and content */
+.sidebar-gradient {
+  background: linear-gradient(to right, #e6ffea, #ffffff);
+}
+
+.content-gradient {
+  background: linear-gradient(to right, #f0fff4, #ffffff);
+}
+
+/* Custom avatar styles */
+.avatar-gray {
+  background-color: #f0f0f0;
+}
+
+.dark .avatar-gray {
+  background-color: #2a2a2a;
+}
+
