@@ -1,14 +1,14 @@
 "use client"
 
+import { useState, useEffect } from "react"
+import { useAuth } from "@/lib/auth"
+import { useRouter } from "next/navigation"
+import { usePageTitle } from "@/lib/page-title-context"
+import { toast } from "sonner"
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { useAuth } from "@/lib/auth"
-import { usePageTitle } from "@/lib/page-title-context"
 import { useIsMobile } from "@/hooks/use-mobile"
-import { useRouter } from "next/navigation"
-import { useEffect, useState } from "react"
-import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { FaPlus } from "react-icons/fa"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
@@ -23,10 +23,9 @@ import {
   SelectValue,
 } from "@/components/ui/select"
 
-// Import các API
-import { getInventoryItems, getInventoryItemById, createInventoryItem, updateInventoryItem, deleteInventoryItem, Inventory } from "@/lib/api/inventory"
-
-
+// Import API
+import { getInventoryItems, getInventoryItemById, deleteInventoryItem, createInventoryItem, updateInventoryItem } from "@/lib/api"
+import { Inventory } from "@/lib/api/inventory"
 
 export default function InventoryPage() {
   const isMobile = useIsMobile()
@@ -45,12 +44,6 @@ export default function InventoryPage() {
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
   const [categoryFilter, setCategoryFilter] = useState<string>("all") // "all" = tất cả, "HH" = hàng hóa, "CP" = chi phí
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login")
-    }
-  }, [loading, user, router])
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
@@ -87,9 +80,11 @@ export default function InventoryPage() {
     }
   }, [user, categoryFilter])
 
-  // Xử lý xóa hàng hóa
+  // State cho trạng thái xóa
   const [isDeleting, setIsDeleting] = useState(false)
+  const [isBatchDeleting, setIsBatchDeleting] = useState(false)
 
+  // Xử lý xóa hàng hóa
   const handleDelete = async () => {
     if (!selectedItem) return
 
@@ -103,20 +98,21 @@ export default function InventoryPage() {
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
         })
-        // Tải lại dữ liệu
         await fetchData()
         setIsDeleteModalOpen(false)
       } else {
-        toast.error(result?.message || "Xóa hàng hóa thất bại", {
+        setError(result?.message || "Không thể xóa hàng hóa")
+        toast.error("Xóa hàng hóa thất bại", {
+          description: result?.message || "Không thể xóa hàng hóa",
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
         })
       }
     } catch (err: any) {
       console.error("Error deleting inventory item:", err)
-      // Hiển thị thông báo lỗi cụ thể từ backend nếu có
-      const errorMessage = err.response?.data?.message || "Đã xảy ra lỗi khi xóa hàng hóa"
-      toast.error(errorMessage, {
+      setError("Đã xảy ra lỗi khi xóa hàng hóa")
+      toast.error("Đã xảy ra lỗi", {
+        description: err.response?.data?.message || "Đã xảy ra lỗi khi xóa hàng hóa",
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       })
@@ -126,21 +122,13 @@ export default function InventoryPage() {
   }
 
   // Xử lý xóa nhiều hàng hóa
-  const handleBatchDelete = async (selectedRows: Inventory[]) => {
-    try {
-      setSelectedItems(selectedRows)
-      setIsBatchDeleteModalOpen(true)
-    } catch (err) {
-      console.error("Error preparing batch delete:", err)
-      toast.error("Đã xảy ra lỗi", {
-        description: "Đã xảy ra lỗi khi chuẩn bị xóa hàng loạt"
-      })
-    }
+  const handleBatchDelete = (items: Inventory[]) => {
+    if (!items.length) return
+    setSelectedItems(items)
+    setIsBatchDeleteModalOpen(true)
   }
 
-  // Xử lý xóa nhiều hàng hóa
-  const [isBatchDeleting, setIsBatchDeleting] = useState(false)
-
+  // Xác nhận xóa nhiều hàng hóa
   const confirmBatchDelete = async () => {
     if (!selectedItems.length) return
 
