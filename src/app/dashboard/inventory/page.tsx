@@ -148,7 +148,7 @@ export default function InventoryPage() {
       setIsBatchDeleting(true)
       let successCount = 0
       let errorCount = 0
-      let errorMessages: string[] = []
+      const errorMessages: string[] = []
 
       // Xử lý từng hàng hóa
       for (const item of selectedItems) {

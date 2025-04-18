@@ -74,7 +74,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
         )
       },
       cell: ({ row }) => {
-        const itemName = row.getValue("item_name");
+        const itemName = row.getValue("item_name") as string;
         console.log('Rendering item_name:', itemName, 'for row:', row.original);
         return <div>{itemName}</div>;
       },
@@ -98,7 +98,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
           </div>
         )
       },
-      cell: ({ row }) => <div className="text-center">{row.getValue("unit")}</div>,
+      cell: ({ row }) => <div className="text-center">{row.getValue("unit") as string}</div>,
       meta: {
         columnName: "Đơn vị"
       },
@@ -145,7 +145,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
       cell: ({ row }) => {
         // Lấy giá trị số lượng
-        const quantity = row.getValue("quantity");
+        const quantity = row.getValue("quantity") as number;
 
         // Chuyển đổi sang số
         const numericQuantity = Number(quantity);

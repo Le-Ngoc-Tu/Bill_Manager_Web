@@ -23,7 +23,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "invoice_number",
       header: "Số hóa đơn",
       cell: ({ row }) => {
-        return <div className="text-center">{row.getValue("invoice_number")}</div>
+        return <div className="text-center">{row.getValue("invoice_number") as string}</div>
       },
       meta: {
         columnName: "Số hóa đơn"
@@ -33,7 +33,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "item_name",
       header: "Tên chi phí",
       cell: ({ row }) => {
-        return <div className="text-left">{row.getValue("item_name")}</div>
+        return <div className="text-left">{row.getValue("item_name") as string}</div>
       },
       meta: {
         columnName: "Tên chi phí"
@@ -43,7 +43,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "unit",
       header: "Đơn vị",
       cell: ({ row }) => {
-        return <div className="text-center">{row.getValue("unit")}</div>
+        return <div className="text-center">{row.getValue("unit") as string}</div>
       },
       meta: {
         columnName: "Đơn vị"
@@ -53,7 +53,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "quantity",
       header: "Số lượng",
       cell: ({ row }) => {
-        return <div className="text-center">{formatQuantity(row.getValue("quantity"))}</div>
+        return <div className="text-center">{formatQuantity(row.getValue("quantity") as number)}</div>
       },
       meta: {
         columnName: "Số lượng"
@@ -63,7 +63,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "price_before_tax",
       header: "Đơn giá",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("price_before_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("price_before_tax") as number)}</div>
       },
       meta: {
         columnName: "Đơn giá"
@@ -73,7 +73,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "total_before_tax",
       header: "Thành tiền",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_before_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_before_tax") as number)}</div>
       },
       meta: {
         columnName: "Thành tiền"
@@ -83,7 +83,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "tax_rate",
       header: "Thuế suất",
       cell: ({ row }) => {
-        return <div className="text-center">{row.getValue("tax_rate")}</div>
+        return <div className="text-center">{row.getValue("tax_rate") as string}</div>
       },
       meta: {
         columnName: "Thuế suất"
@@ -93,7 +93,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "tax_amount",
       header: "Tiền thuế",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("tax_amount"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("tax_amount") as number)}</div>
       },
       meta: {
         columnName: "Tiền thuế"
@@ -103,7 +103,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "total_after_tax",
       header: "Tổng cộng",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_after_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_after_tax") as number)}</div>
       },
       meta: {
         columnName: "Tổng cộng"
@@ -113,7 +113,7 @@ export const getDetailColumns = (): ColumnDef<ExpenseReportDetail>[] => {
       accessorKey: "seller_name",
       header: "Người bán",
       cell: ({ row }) => {
-        return <div className="text-left">{row.getValue("seller_name") || "Không có"}</div>
+        return <div className="text-left">{(row.getValue("seller_name") as string) || "Không có"}</div>
       },
       meta: {
         columnName: "Người bán"
@@ -129,7 +129,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "item_name",
       header: "Tên chi phí",
       cell: ({ row }) => {
-        return <div className="text-left">{row.getValue("item_name")}</div>
+        return <div className="text-left">{row.getValue("item_name") as string}</div>
       },
       meta: {
         columnName: "Tên chi phí"
@@ -139,7 +139,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "unit",
       header: "Đơn vị",
       cell: ({ row }) => {
-        return <div className="text-center">{row.getValue("unit")}</div>
+        return <div className="text-center">{row.getValue("unit") as string}</div>
       },
       meta: {
         columnName: "Đơn vị"
@@ -149,7 +149,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "count",
       header: "Số lần",
       cell: ({ row }) => {
-        return <div className="text-center">{row.getValue("count")}</div>
+        return <div className="text-center">{row.getValue("count") as number}</div>
       },
       meta: {
         columnName: "Số lần"
@@ -159,7 +159,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "total_quantity",
       header: "Tổng số lượng",
       cell: ({ row }) => {
-        return <div className="text-center">{formatQuantity(row.getValue("total_quantity"))}</div>
+        return <div className="text-center">{formatQuantity(row.getValue("total_quantity") as number)}</div>
       },
       meta: {
         columnName: "Tổng số lượng"
@@ -169,7 +169,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "total_before_tax",
       header: "Tổng tiền hàng",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_before_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_before_tax") as number)}</div>
       },
       meta: {
         columnName: "Tổng tiền hàng"
@@ -179,7 +179,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "total_tax",
       header: "Tổng tiền thuế",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_tax") as number)}</div>
       },
       meta: {
         columnName: "Tổng tiền thuế"
@@ -189,7 +189,7 @@ export const getSummaryColumns = (): ColumnDef<ExpenseSummaryItem>[] => {
       accessorKey: "total_after_tax",
       header: "Tổng cộng",
       cell: ({ row }) => {
-        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_after_tax"))}</div>
+        return <div className="text-center font-bold">{formatCurrency(row.getValue("total_after_tax") as number)}</div>
       },
       meta: {
         columnName: "Tổng cộng"

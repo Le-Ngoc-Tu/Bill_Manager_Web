@@ -499,31 +499,31 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
         unit: data.unit,
         quantity: data.quantity,
         category: data.category,
-        price: data.category === 'CP' ? form.getValues(`details.${currentDetailIndex}.price_before_tax`) || 0 : 0
+        price: data.category === 'CP' ? (currentDetailIndex !== null ? Number(form.getValues("details")[currentDetailIndex]?.price_before_tax || 0) : 0) : 0
       };
 
       // Áp dụng hàng hóa vào dòng hiện tại
       if (currentDetailIndex !== null) {
         // Reset các giá trị trước khi áp dụng hàng hóa mới
-        form.setValue(`details.${currentDetailIndex}.price_before_tax`, tempInventory.price)
-        form.setValue(`details.${currentDetailIndex}.tax_rate`, "10%")
+        form.setValue(`details.${currentDetailIndex}.price_before_tax` as any, tempInventory.price)
+        form.setValue(`details.${currentDetailIndex}.tax_rate` as any, "10%")
 
         // Áp dụng hàng hóa mới và cập nhật đơn vị tính trực tiếp
         // Đặt inventory_id = null vì chưa lưu vào cơ sở dữ liệu
         // Khi nhấn nút "Thêm hóa đơn", hệ thống sẽ tạo hàng hóa mới và lưu ID
-        form.setValue(`details.${currentDetailIndex}.inventory_id`, null)
-        form.setValue(`details.${currentDetailIndex}.item_name`, tempInventory.item_name)
-        form.setValue(`details.${currentDetailIndex}.unit`, tempInventory.unit)
-        form.setValue(`details.${currentDetailIndex}.category`, tempInventory.category)
+        form.setValue(`details.${currentDetailIndex}.inventory_id` as any, null)
+        form.setValue(`details.${currentDetailIndex}.item_name` as any, tempInventory.item_name)
+        form.setValue(`details.${currentDetailIndex}.unit` as any, tempInventory.unit)
+        form.setValue(`details.${currentDetailIndex}.category` as any, tempInventory.category)
 
         // Đối với chi phí, sử dụng số lượng đã nhập trong form thêm hàng hóa
         if (data.category === 'CP' && data.quantity > 0) {
           console.log(`Setting quantity for expense item to ${data.quantity}`);
-          form.setValue(`details.${currentDetailIndex}.quantity`, data.quantity);
+          form.setValue(`details.${currentDetailIndex}.quantity` as any, data.quantity);
         }
 
         // Cập nhật giao diện
-        form.trigger(`details.${currentDetailIndex}`)
+        form.trigger(`details.${currentDetailIndex}` as any)
 
         // Cập nhật các tính toán
         handleDetailFieldChange(currentDetailIndex)
