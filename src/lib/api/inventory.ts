@@ -17,13 +17,18 @@ export interface InventoryFormData {
   unit: string;
   quantity: number;
   category: "HH" | "CP";
+  price?: number;
 }
 
 // Lấy danh sách hàng hóa trong kho
-export const getInventoryItems = async () => {
+export const getInventoryItems = async (forCombobox = false, category = "") => {
   try {
     const response = await axios.get(`${API_URL}/inventory`, {
-      headers: getAuthHeader()
+      headers: getAuthHeader(),
+      params: {
+        forCombobox: forCombobox,
+        category: category // Thêm tham số category để lọc theo loại
+      }
     });
 
     return response.data;

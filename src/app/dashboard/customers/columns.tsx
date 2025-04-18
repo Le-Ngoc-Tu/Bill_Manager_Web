@@ -100,6 +100,27 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
     },
     {
+      accessorKey: "address",
+      header: ({ column }) => {
+        return (
+          <div className="text-center">
+            <Button
+              variant="ghost"
+              onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+              className="w-full hover:bg-red-800 hover:text-white"
+            >
+              Địa chỉ
+              <ArrowUpDown className="ml-2 h-4 w-4" />
+            </Button>
+          </div>
+        )
+      },
+      cell: ({ row }) => <div>{row.getValue("address") || "-"}</div>,
+      meta: {
+        columnName: "Địa chỉ"
+      },
+    },
+    {
       accessorKey: "phone",
       header: ({ column }) => {
         return (

@@ -112,6 +112,12 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     const [currentPage, setCurrentPage] = useState(1)
     const itemsPerPage = 7
 
+    // State để lưu trữ danh sách các chi tiết đã đánh dấu xóa
+    const [deletedDetails, setDeletedDetails] = useState<any[]>([])
+
+    // State để lưu trữ số lượng tồn kho dự kiến sau khi xuất
+    const [estimatedInventory, setEstimatedInventory] = useState<Record<number, number>>({})
+
     // Khai báo form cho thêm mới customer và inventory
     const customerForm = useForm<CustomerFormValues>({
         resolver: zodResolver(customerFormSchema),
@@ -344,6 +350,13 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 const newInventoryError = { ...inventoryError }
                 delete newInventoryError[index]
                 setInventoryError(newInventoryError)
+
+                // Tính toán số lượng tồn kho dự kiến sau khi xuất
+                const estimatedQty = Math.max(0, Number(matchedItem.quantity) - currentQuantity)
+                setEstimatedInventory(prev => ({
+                    ...prev,
+                    [matchedItem.id as number]: estimatedQty
+                }))
             }
 
             // Sử dụng thông tin của hàng hóa đã chọn
@@ -379,6 +392,51 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         const inventoryId = form.getValues(`details.${index}.inventory_id`)
         if (inventoryId) {
             const matchedItem = inventoryItems.find(item => item.id === inventoryId)
+
+            // Nếu đang ở chế độ chỉnh sửa, cần kiểm tra số lượng cũ
+            if (mode === "edit" && initialData?.id && initialData.details) {
+                // Tìm chi tiết hiện tại trong dữ liệu ban đầu
+                const originalDetail = initialData.details.find((d: any) =>
+                    d.inventory_id === inventoryId && d.id === form.getValues(`details.${index}.id`)
+                );
+
+                // Nếu tìm thấy chi tiết gốc và số lượng mới nhỏ hơn hoặc bằng số lượng cũ
+                // hoặc số lượng chênh lệch không vượt quá tồn kho hiện tại
+                if (originalDetail) {
+                    const oldQuantity = Number(originalDetail.quantity) || 0;
+
+                    // Chỉ kiểm tra nếu số lượng mới lớn hơn số lượng cũ
+                    if (numValue > oldQuantity && matchedItem && matchedItem.quantity < (numValue - oldQuantity)) {
+                        setInventoryError({
+                            ...inventoryError,
+                            [index]: `Không đủ hàng trong kho! Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất thêm: ${numValue - oldQuantity}`
+                        })
+
+                        // Hiển thị thông báo toast
+                        toast.error("Vượt quá số lượng tồn kho", {
+                            description: `Không đủ hàng trong kho! ${matchedItem.item_name}: Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất thêm: ${numValue - oldQuantity}`,
+                            className: "text-lg font-medium",
+                            descriptionClassName: "text-base"
+                        })
+                    } else {
+                        const newInventoryError = { ...inventoryError }
+                        delete newInventoryError[index]
+                        setInventoryError(newInventoryError)
+
+                        // Tính toán số lượng tồn kho dự kiến sau khi xuất
+                        if (matchedItem) {
+                            const estimatedQty = Math.max(0, Number(matchedItem.quantity) - (numValue - oldQuantity))
+                            setEstimatedInventory(prev => ({
+                                ...prev,
+                                [inventoryId as number]: estimatedQty
+                            }))
+                        }
+                    }
+                    return; // Đã xử lý xong trường hợp chỉnh sửa
+                }
+            }
+
+            // Xử lý trường hợp thêm mới hoặc không tìm thấy chi tiết gốc
             if (matchedItem && matchedItem.quantity < numValue) {
                 setInventoryError({
                     ...inventoryError,
@@ -391,10 +449,17 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     className: "text-lg font-medium",
                     descriptionClassName: "text-base"
                 })
-            } else {
+            } else if (matchedItem) {
                 const newInventoryError = { ...inventoryError }
                 delete newInventoryError[index]
                 setInventoryError(newInventoryError)
+
+                // Tính toán số lượng tồn kho dự kiến sau khi xuất
+                const estimatedQty = Math.max(0, Number(matchedItem.quantity) - numValue)
+                setEstimatedInventory(prev => ({
+                    ...prev,
+                    [inventoryId as number]: estimatedQty
+                }))
             }
         }
 
@@ -562,7 +627,28 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             // Kiểm tra tồn kho trước khi cập nhật
             if (detail.inventory_id) {
                 const inventory = inventoryItems.find(item => item.id === detail.inventory_id);
-                if (inventory && inventory.quantity < detail.quantity) {
+
+                // Tìm chi tiết gốc để so sánh số lượng
+                const originalDetail = initialData.details.find((d: any) =>
+                    d.id === detail.id && d.inventory_id === detail.inventory_id
+                );
+
+                if (originalDetail) {
+                    const oldQuantity = Number(originalDetail.quantity) || 0;
+                    const newQuantity = Number(detail.quantity) || 0;
+
+                    // Chỉ kiểm tra nếu số lượng mới lớn hơn số lượng cũ
+                    if (newQuantity > oldQuantity && inventory && inventory.quantity < (newQuantity - oldQuantity)) {
+                        toast.error("Vượt quá số lượng tồn kho", {
+                            description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất thêm: ${newQuantity - oldQuantity}`,
+                            className: "text-lg font-medium",
+                            descriptionClassName: "text-base"
+                        });
+                        setLoading(false);
+                        return;
+                    }
+                } else if (inventory && inventory.quantity < detail.quantity) {
+                    // Nếu không tìm thấy chi tiết gốc (trường hợp thêm mới), kiểm tra bình thường
                     toast.error("Vượt quá số lượng tồn kho", {
                         description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất: ${Number(detail.quantity)}`,
                         className: "text-lg font-medium",
@@ -573,96 +659,25 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 }
             }
 
-            // Kiểm tra xem chi tiết có ID không (nếu không có ID thì là chi tiết mới)
-            if (!detail.id) {
-                // Nếu là chi tiết mới, gọi API để thêm vào cơ sở dữ liệu
-                // Chuẩn bị dữ liệu gửi đi
-                const detailData = {
-                    ...detail,
-                    quantity: Number(detail.quantity),
-                    price_before_tax: Number(detail.price_before_tax),
-                    // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-                    total_before_tax: undefined,
-                    total_after_tax: undefined,
-                    tax_amount: undefined
-                };
+            // Tính toán lại các giá trị tổng
+            calculateDetailTotals(index);
 
-                const result = await addExportDetail(initialData.id, detailData);
+            // Tắt chế độ chỉnh sửa
+            setEditingRowIndex(null);
 
-                if (result && result.success) {
-                    // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-                    const updatedExport = result.data.export;
-                    const updatedDetails = updatedExport.details.map((d: any) => ({
-                        ...d,
-                        quantity: Number(d.quantity) || 0,
-                        price_before_tax: Number(d.price_before_tax) || 0,
-                        tax_rate: d.tax_rate || "0%"
-                    }));
-
-                    // Cập nhật lại form với dữ liệu mới
-                    form.setValue("details", updatedDetails);
-
-                    // Tắt chế độ chỉnh sửa
-                    setEditingRowIndex(null);
-
-                    // Hiển thị thông báo thành công
-                    toast.success("Thêm hàng hóa thành công", {
-                        description: `Đã thêm hàng hóa ${detail.item_name} vào hóa đơn`
-                    });
-
-                    return;
-                } else {
-                    // Hiển thị thông báo lỗi
-                    setError("Không thể thêm hàng hóa");
-                    toast.error("Không thể thêm hàng hóa", {
-                        description: result?.message || "Vui lòng kiểm tra lại thông tin"
-                    });
-                    return;
-                }
-            }
-
-            // Chuẩn bị dữ liệu gửi đi
-            const detailData = {
-                ...detail,
-                quantity: Number(detail.quantity),
-                price_before_tax: Number(detail.price_before_tax),
-                // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-                total_before_tax: undefined,
-                total_after_tax: undefined,
-                tax_amount: undefined
-            };
-
-            const result = await updateExportDetail(initialData.id, detail.id, detailData);
-
-            if (result && result.success) {
-                // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-                const updatedExport = result.data.export;
-                const updatedDetails = updatedExport.details.map((d: any) => ({
-                    ...d,
-                    quantity: Number(d.quantity) || 0,
-                    price_before_tax: Number(d.price_before_tax) || 0,
-                    tax_rate: d.tax_rate || "0%"
-                }));
-
-                // Cập nhật lại form với dữ liệu mới
-                form.setValue("details", updatedDetails);
-
-                // Hiển thị thông báo thành công
-                toast.success("Cập nhật hàng hóa thành công", {
-                    description: `Đã cập nhật hàng hóa ${detail.item_name}`
-                });
-            } else {
-                // Hiển thị thông báo lỗi
-                setError("Không thể cập nhật hàng hóa");
-                toast.error("Không thể cập nhật hàng hóa", {
-                    description: result?.message || "Vui lòng kiểm tra lại thông tin"
-                });
-            }
+            // Hiển thị thông báo thành công
+            toast.success("Cập nhật hàng hóa thành công", {
+                description: `Đã cập nhật hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
+            });
         } catch (err) {
             console.error("Error updating detail in edit mode:", err);
             setError("Đã xảy ra lỗi khi cập nhật hàng hóa");
             toast.error("Đã xảy ra lỗi", {
-                description: "Đã xảy ra lỗi khi cập nhật hàng hóa"
+                description: "Đã xảy ra lỗi khi cập nhật hàng hóa",
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
             });
         } finally {
             setLoading(false);
@@ -684,40 +699,65 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             if (!detail.id) {
                 // Nếu là chi tiết mới chưa lưu, chỉ cần xóa khỏi form
                 remove(index);
-                return;
-            }
-
-            const result = await deleteExportDetail(initialData.id, detail.id);
-
-            if (result && result.success) {
-                // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-                const updatedExport = result.data.export;
-                const updatedDetails = updatedExport.details.map((d: any) => ({
-                    ...d,
-                    quantity: Number(d.quantity) || 0,
-                    price_before_tax: Number(d.price_before_tax) || 0,
-                    tax_rate: d.tax_rate || "0%"
-                }));
-
-                // Cập nhật lại form với dữ liệu mới
-                form.setValue("details", updatedDetails);
 
                 // Hiển thị thông báo thành công
                 toast.success("Xóa hàng hóa thành công", {
-                    description: `Đã xóa hàng hóa ${detail.item_name} khỏi hóa đơn`
+                    description: `Đã xóa hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
                 });
-            } else {
-                // Hiển thị thông báo lỗi
-                setError("Không thể xóa hàng hóa");
-                toast.error("Không thể xóa hàng hóa", {
-                    description: result?.message || "Vui lòng kiểm tra lại thông tin"
-                });
+                setLoading(false);
+                return;
             }
+
+            // Nếu là chi tiết đã có trong cơ sở dữ liệu, đánh dấu để xóa khi submit form
+            // Lưu chi tiết vào danh sách các chi tiết đã đánh dấu xóa
+            setDeletedDetails(prev => [...prev, detail]);
+
+            // Cập nhật số lượng tồn kho dự kiến nếu chi tiết có inventory_id
+            if (detail.inventory_id) {
+                const inventory = inventoryItems.find(item => item.id === detail.inventory_id);
+                if (inventory) {
+                    // Tìm chi tiết gốc để so sánh số lượng
+                    const originalDetail = initialData.details.find((d: any) =>
+                        d.id === detail.id && d.inventory_id === detail.inventory_id
+                    );
+
+                    if (originalDetail) {
+                        const oldQuantity = Number(originalDetail.quantity) || 0;
+                        // Khi xóa chi tiết, số lượng tồn kho sẽ tăng lên bằng số lượng đã xuất
+                        const estimatedQty = Number(inventory.quantity) + oldQuantity;
+                        setEstimatedInventory(prev => ({
+                            ...prev,
+                            [detail.inventory_id as number]: estimatedQty
+                        }));
+                    }
+                }
+            }
+
+            // Xóa chi tiết khỏi form
+            remove(index);
+
+            // Đảm bảo các trường bắt buộc được cập nhật đúng cách
+            // Trigger validation cho tất cả các trường
+            form.trigger();
+
+            console.log("Form values after delete:", form.getValues());
+            console.log("Form errors after delete:", form.formState.errors);
+
+            // Hiển thị thông báo thành công
+            toast.success("Xóa hàng hóa thành công", {
+                description: `Đã xóa hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
+            });
         } catch (err) {
             console.error("Error deleting detail in edit mode:", err);
             setError("Đã xảy ra lỗi khi xóa hàng hóa");
             toast.error("Đã xảy ra lỗi", {
-                description: "Đã xảy ra lỗi khi xóa hàng hóa"
+                description: "Đã xảy ra lỗi khi xóa hàng hóa",
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
             });
         } finally {
             setLoading(false);
@@ -747,6 +787,32 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             const detail = data.details[i];
             if (detail.category === 'HH' && detail.inventory_id) {
                 const inventory = inventoryItems.find(item => item.id === detail.inventory_id);
+
+                // Nếu đang ở chế độ chỉnh sửa, cần kiểm tra số lượng cũ
+                if (mode === "edit" && initialData?.id && initialData.details && detail.id) {
+                    // Tìm chi tiết gốc để so sánh số lượng
+                    const originalDetail = initialData.details.find((d: any) =>
+                        d.id === detail.id && d.inventory_id === detail.inventory_id
+                    );
+
+                    if (originalDetail) {
+                        const oldQuantity = Number(originalDetail.quantity) || 0;
+                        const newQuantity = Number(detail.quantity) || 0;
+
+                        // Chỉ kiểm tra nếu số lượng mới lớn hơn số lượng cũ
+                        if (newQuantity > oldQuantity && inventory && inventory.quantity < (newQuantity - oldQuantity)) {
+                            toast.error("Vượt quá số lượng tồn kho", {
+                                description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất thêm: ${newQuantity - oldQuantity}`,
+                                className: "text-lg font-medium",
+                                descriptionClassName: "text-base"
+                            });
+                            return;
+                        }
+                        continue; // Đã xử lý xong trường hợp chỉnh sửa
+                    }
+                }
+
+                // Xử lý trường hợp thêm mới hoặc không tìm thấy chi tiết gốc
                 if (inventory && Number(inventory.quantity) < Number(detail.quantity)) {
                     toast.error("Vượt quá số lượng tồn kho", {
                         description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất: ${Number(detail.quantity)}`,
@@ -770,19 +836,60 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         console.log("Modified form data being submitted:", formData);
         console.log("Note field in form data:", formData.note);
 
-        // Kiểm tra xem có hàng hóa mới nào chưa được lưu không
+        // Kiểm tra xem có đang ở chế độ chỉnh sửa không
         if (mode === "edit" && initialData?.id) {
-            const details = formData.details;
-            const newDetails = details.filter(detail => !detail.id);
+            setLoading(true);
+            try {
+                // 1. Xử lý xóa các chi tiết đã đánh dấu
+                if (deletedDetails.length > 0) {
+                    console.log("Found deleted details:", deletedDetails);
 
-            // Nếu có hàng hóa mới chưa được lưu
-            if (newDetails.length > 0) {
-                setLoading(true);
+                    // Xóa từng chi tiết đã đánh dấu
+                    for (const detail of deletedDetails) {
+                        if (detail.id) {
+                            console.log(`Deleting detail with ID ${detail.id}`);
+                            await deleteExportDetail(initialData.id, detail.id);
+                        }
+                    }
 
-                try {
+                    // Xóa danh sách các chi tiết đã đánh dấu xóa
+                    setDeletedDetails([]);
+                }
+
+                // 2. Cập nhật các chi tiết đã thay đổi
+                const details = formData.details;
+                for (const detail of details) {
+                    if (detail.id) {
+                        console.log(`Updating detail with ID ${detail.id}`);
+                        // Chuẩn bị dữ liệu gửi đi
+                        const detailData = {
+                            ...detail,
+                            quantity: Number(detail.quantity),
+                            price_before_tax: Number(detail.price_before_tax),
+                            // Đảm bảo item_name là chuỗi
+                            item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
+                            // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
+                            inventory_id: detail.inventory_id,
+                            // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
+                            total_before_tax: undefined,
+                            total_after_tax: undefined,
+                            tax_amount: undefined
+                        };
+
+                        await updateExportDetail(initialData.id, detail.id, detailData);
+                    }
+                }
+
+                // 3. Kiểm tra xem có hàng hóa mới nào chưa được lưu không
+                const newDetails = details.filter(detail => !detail.id);
+
+                // Nếu có hàng hóa mới chưa được lưu
+                if (newDetails.length > 0) {
                     // Hiển thị thông báo cho người dùng
                     toast.info("Lưu các hàng hóa mới trước khi cập nhật hóa đơn", {
-                        description: `Đang lưu ${newDetails.length} hàng hóa mới vào hóa đơn`
+                        description: `Đang lưu ${newDetails.length} hàng hóa mới vào hóa đơn`,
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
                     });
 
                     // Lưu từng hàng hóa mới
@@ -836,30 +943,31 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                             }
                         }
                     }
-
-                    // Sau khi lưu tất cả hàng hóa mới, gọi hàm onSubmit để cập nhật hóa đơn
-                    const updatedFormValues = form.getValues();
-                    // Đảm bảo trường note được gửi đúng cách
-                    const updatedData = {
-                        ...updatedFormValues,
-                        note: updatedFormValues.note === undefined || updatedFormValues.note === null ? "" : updatedFormValues.note
-                    };
-                    console.log("Updated data after saving details:", updatedData);
-                    onSubmit(updatedData);
-                } catch (error) {
-                    console.error("Error saving new details:", error);
-                    toast.error("Đã xảy ra lỗi khi lưu hàng hóa mới", {
-                        description: "Vui lòng kiểm tra lại thông tin và thử lại"
-                    });
-                } finally {
-                    setLoading(false);
                 }
 
-                return;
+                // 4. Sau khi xử lý tất cả chi tiết, gọi hàm onSubmit để cập nhật hóa đơn
+                const updatedFormValues = form.getValues();
+                // Đảm bảo trường note được gửi đúng cách
+                const updatedData = {
+                    ...updatedFormValues,
+                    note: updatedFormValues.note === undefined || updatedFormValues.note === null ? "" : updatedFormValues.note
+                };
+                console.log("Updated data after processing details:", updatedData);
+                onSubmit(updatedData);
+            } catch (error) {
+                console.error("Error processing details:", error);
+                toast.error("Đã xảy ra lỗi khi xử lý hàng hóa", {
+                    description: "Vui lòng kiểm tra lại thông tin và thử lại",
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
+                });
+            } finally {
+                setLoading(false);
             }
+            return;
         }
 
-        // Nếu không có hàng hóa mới hoặc không phải chế độ chỉnh sửa, gọi hàm onSubmit bình thường
+        // Nếu không phải chế độ chỉnh sửa, gọi hàm onSubmit bình thường
         // Sử dụng formData đã được xử lý để đảm bảo trường note được gửi đúng cách
         onSubmit(formData);
     };
@@ -967,7 +1075,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     <div className="p-2 md:p-4 border rounded-md bg-gray-50 space-y-1 md:space-y-2 max-w-full">
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
                             <span className="font-medium text-sm md:text-base">Tổng tiền trước thuế:</span>
-                            <span className="text-sm md:text-base">
+                            <span className="text-sm md:text-base font-bold">
                                 {formatCurrency(
                                     roundToThreeDecimals(
                                         form.getValues("details")?.reduce(
@@ -980,7 +1088,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                         </div>
                         <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
                             <span className="font-medium text-sm md:text-base">Tổng tiền thuế:</span>
-                            <span className="text-sm md:text-base">
+                            <span className="text-sm md:text-base font-bold">
                                 {formatCurrency(
                                     roundToThreeDecimals(
                                         form.getValues("details")?.reduce(
@@ -1035,7 +1143,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                             onClick={() => {
                                 // Thêm dòng mới vào form
                                 append({
-                                    category: "HH",
+                                    category: "HH", // Solo permitimos HH (hàng hóa) para exportaciones
                                     item_name: "",
                                     unit: "",
                                     quantity: 0,
@@ -1130,7 +1238,6 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                 </SelectTrigger>
                                                                 <SelectContent>
                                                                     <SelectItem value="HH" className="text-sm">Hàng hóa</SelectItem>
-                                                                    <SelectItem value="CP" className="text-sm">Chi phí</SelectItem>
                                                                 </SelectContent>
                                                             </Select>
                                                         )}
@@ -1148,11 +1255,14 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                                 control={form.control}
                                                                                 render={({ field }) => {
                                                                                     // Chuyển đổi danh sách hàng hóa thành options cho Combobox
-                                                                                    const inventoryOptions = inventoryItems.map(item => ({
-                                                                                        label: item.item_name,
-                                                                                        value: item.id.toString(),
-                                                                                        description: `Loại: ${item.category === 'HH' ? 'Hàng hóa' : 'Chi phí'}, Tồn kho: ${Number(item.quantity)} ${item.unit}`
-                                                                                    }))
+                                                                                    // Chỉ lọc các hàng hóa loại HH (hàng hóa) cho xuất kho
+                                                                                    const inventoryOptions = inventoryItems
+                                                                                        .filter(item => item.category === 'HH')
+                                                                                        .map(item => ({
+                                                                                            label: item.item_name,
+                                                                                            value: item.id.toString(),
+                                                                                            description: `Tồn kho: ${Number(item.quantity)} ${item.unit}`
+                                                                                        }))
 
                                                                                     // Xác định giá trị hiện tại (ID hoặc tên hàng hóa)
                                                                                     const currentValue = field.value
@@ -1200,7 +1310,19 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                     <span className={`text-sm md:text-base ${form.getValues(`details.${actualIndex}.inventory_id`) ? 'font-medium' : ''}`}>
                                                         {form.getValues(`details.${actualIndex}.inventory_id`) ?
                                                             (() => {
-                                                                const inventory = inventoryItems.find(item => item.id === form.getValues(`details.${actualIndex}.inventory_id`));
+                                                                const inventoryId = form.getValues(`details.${actualIndex}.inventory_id`);
+                                                                const inventory = inventoryItems.find(item => item.id === inventoryId);
+
+                                                                // Hiển thị số lượng tồn kho dự kiến nếu có
+                                                                if (inventoryId && estimatedInventory[inventoryId] !== undefined) {
+                                                                    return (
+                                                                        <>
+                                                                            <span className="line-through text-gray-500 mr-1">{inventory ? Number(inventory.quantity) : "N/A"}</span>
+                                                                            <span className="text-blue-600">{estimatedInventory[inventoryId]}</span>
+                                                                        </>
+                                                                    );
+                                                                }
+
                                                                 return inventory ? Number(inventory.quantity) : "N/A";
                                                             })() : "N/A"}
                                                     </span>
@@ -1384,7 +1506,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                     />
                                                 </TableCell>
                                                 <TableCell className="px-1 md:px-2 py-2 md:py-3 text-right font-medium">
-                                                    <span className="text-sm md:text-base">
+                                                    <span className="text-sm md:text-base font-bold">
                                                         {formatCurrency(
                                                             roundToThreeDecimals(
                                                                 (form.getValues(`details.${actualIndex}.quantity`) || 0) *
@@ -1394,7 +1516,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                     </span>
                                                 </TableCell>
                                                 <TableCell className="px-1 md:px-2 py-2 md:py-3 text-right font-medium">
-                                                    <span className="text-sm md:text-base">
+                                                    <span className="text-sm md:text-base font-bold">
                                                         {formatCurrency(
                                                             roundToThreeDecimals(
                                                                 form.getValues(`details.${actualIndex}.total_after_tax`) || 0

@@ -49,6 +49,7 @@ interface DataTableProps<TData, TValue> {
   actionButton?: React.ReactNode
   onDeleteSelected?: (selectedRows: TData[]) => void
   onRowClick?: (row: TData) => void
+  categoryFilter?: React.ReactNode // Thêm prop cho bộ lọc loại hàng hóa
 }
 
 export function DataTable<TData, TValue>({
@@ -59,6 +60,7 @@ export function DataTable<TData, TValue>({
   actionButton,
   onDeleteSelected,
   onRowClick,
+  categoryFilter,
 }: DataTableProps<TData, TValue>) {
   const [sorting, setSorting] = useState<SortingState>([])
   const [columnFilters, setColumnFilters] = useState<ColumnFiltersState>([])
@@ -124,6 +126,9 @@ export function DataTable<TData, TValue>({
               className="w-full sm:w-[250px] h-10 md:h-12 text-sm md:text-base"
             />
           )}
+          {/* Thêm bộ lọc loại hàng hóa vào đây nếu có */}
+          {categoryFilter}
+
           <DropdownMenu>
             <DropdownMenuTrigger asChild>
               <Button variant="outline" className="h-10 md:h-12 text-sm md:text-base">

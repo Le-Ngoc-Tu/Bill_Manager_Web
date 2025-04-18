@@ -539,11 +539,11 @@ export default function ImportsPage() {
                               <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3 text-center">{detail.category === 'HH' ? 'Hàng hóa' : 'Chi phí'}</TableCell>
                               <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3 text-center">{detail.unit}</TableCell>
                               <TableCell className="text-center text-sm md:text-base py-2 md:py-3">{formatQuantity(detail.quantity)}</TableCell>
-                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3">{formatCurrency(detail.price_before_tax)}</TableCell>
-                              <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3">{formatCurrency(detail.total_before_tax || 0)}</TableCell>
-                              <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3">{detail.tax_rate === "KCT" ? "KCT" : detail.tax_rate}</TableCell>
-                              <TableCell className="text-center hidden lg:table-cell text-sm md:text-base py-2 md:py-3">{formatCurrency(detail.tax_amount || 0)}</TableCell>
-                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3">{formatCurrency(detail.total_after_tax || 0)}</TableCell>
+                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.price_before_tax)}</TableCell>
+                              <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.total_before_tax || 0)}</TableCell>
+                              <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{detail.tax_rate === "KCT" ? "KCT" : detail.tax_rate}</TableCell>
+                              <TableCell className="text-center hidden lg:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.tax_amount || 0)}</TableCell>
+                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.total_after_tax || 0)}</TableCell>
                               <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3">
                                 {detail.seller_name}
                                 {detail.seller_tax_code && <span className="text-sm text-gray-500 block">MST: {detail.seller_tax_code}</span>}
@@ -564,11 +564,11 @@ export default function ImportsPage() {
                     <div className="space-y-1">
                       <div className="flex justify-between">
                         <span className="font-medium mr-4 md:mr-8 text-sm md:text-base">Tổng tiền hàng:</span>
-                        <span className="text-sm md:text-base">{formatCurrency(selectedImport.total_before_tax)}</span>
+                        <span className="text-sm md:text-base font-bold">{formatCurrency(selectedImport.total_before_tax)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="font-medium mr-4 md:mr-8 text-sm md:text-base">Tổng tiền thuế:</span>
-                        <span className="text-sm md:text-base">{formatCurrency(selectedImport.total_tax)}</span>
+                        <span className="text-sm md:text-base font-bold">{formatCurrency(selectedImport.total_tax)}</span>
                       </div>
                       <div className="flex justify-between text-lg md:text-xl font-bold">
                         <span className="mr-4 md:mr-8">Tổng thanh toán:</span>

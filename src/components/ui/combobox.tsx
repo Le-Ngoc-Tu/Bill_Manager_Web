@@ -84,17 +84,24 @@ export function Combobox({
   // Xử lý khi đóng popover mà có giá trị tìm kiếm
   React.useEffect(() => {
     if (!open && searchValue && allowCustomValue) {
+      console.log('Combobox closed with search value:', searchValue);
       // Nếu không tìm thấy trong options và cho phép giá trị tùy chỉnh
       const matchedOption = options.find(
         option => option.label.toLowerCase() === searchValue.toLowerCase()
       )
 
       if (matchedOption) {
+        console.log('Matched option found:', matchedOption);
         // Nếu tìm thấy, sử dụng giá trị của option đó
         onChange(matchedOption.value)
+        // Cập nhật giá trị hiển thị
+        setSelectedValue(matchedOption.label)
       } else {
+        console.log('No matched option, using search value directly:', searchValue);
         // Nếu không tìm thấy, sử dụng giá trị nhập vào
         onChange(searchValue)
+        // Cập nhật giá trị hiển thị
+        setSelectedValue(searchValue)
       }
       setSearchValue("")
     }
@@ -125,7 +132,7 @@ export function Combobox({
           <ChevronsUpDown className="ml-2 h-4 w-4 shrink-0 opacity-50" />
         </Button>
       </PopoverTrigger>
-      <PopoverContent className={cn("p-0", contentClassName)}>
+      <PopoverContent className={cn("p-0", contentClassName)} style={{ maxHeight: '300px', overflowY: 'auto' }}>
         <Command className={className}>
           <CommandInput
             placeholder={`Tìm kiếm ${placeholder.toLowerCase()}...`}
@@ -134,7 +141,7 @@ export function Combobox({
             className="font-normal"
           />
           <CommandEmpty className="font-normal">{emptyMessage}</CommandEmpty>
-          <CommandGroup className="max-h-[200px] overflow-y-auto font-normal">
+          <CommandGroup className="max-h-[200px] overflow-y-auto font-normal overflow-auto" style={{ overflowY: 'auto', WebkitOverflowScrolling: 'touch' }}>
             {options.map((option) => (
               <CommandItem
                 key={option.value}

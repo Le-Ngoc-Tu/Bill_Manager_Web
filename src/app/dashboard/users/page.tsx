@@ -201,15 +201,27 @@ export default function UsersPage() {
     try {
       const result = await getUserById(id)
 
-      if (result) {
+      if (result && result.id) {
+        console.log("Loaded user for edit:", result)
         setSelectedItem(result)
         setIsModalOpen(true)
       } else {
+        console.error("Invalid user data received:", result)
         setError("Không thể tải chi tiết người dùng")
+        toast.error("Không thể tải chi tiết người dùng", {
+          description: "Dữ liệu người dùng không hợp lệ",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        })
       }
     } catch (err) {
       console.error("Error fetching user details:", err)
       setError("Đã xảy ra lỗi khi tải chi tiết người dùng")
+      toast.error("Đã xảy ra lỗi", {
+        description: "Đã xảy ra lỗi khi tải chi tiết người dùng",
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      })
     }
   }
 

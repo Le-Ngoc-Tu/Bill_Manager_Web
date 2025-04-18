@@ -180,9 +180,11 @@ export function LoginForm({
         )}
 
         {error && (
-          <Alert variant="destructive" className="mb-5 mx-4 sm:mx-6 md:mx-10">
-            <AlertDescription>{error}</AlertDescription>
-          </Alert>
+          <div className="px-4 sm:px-6 md:px-10 mb-5">
+            <Alert variant="destructive" className="overflow-hidden">
+              <AlertDescription className="text-sm overflow-hidden text-ellipsis whitespace-normal break-words">{error}</AlertDescription>
+            </Alert>
+          </div>
         )}
 
         {step === "login" ? (
@@ -253,9 +255,6 @@ export function LoginForm({
                   />
                 ))}
               </div>
-              <p className="text-sm text-gray-500 text-center mt-2">
-                Nhập mã xác thực 6 số (demo: 123456)
-              </p>
             </div>
             <div className="flex flex-col gap-3 mt-4">
               <Button

@@ -158,7 +158,7 @@ export const getColumns = ({ onView, onEdit, onDelete, onDeleteMany }: ActionsPr
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_before_tax"))
-      return <div>{formatCurrency(amount)}</div>
+      return <div className="font-bold">{formatCurrency(amount)}</div>
     },
     meta: {
       columnName: "Tổng trước thuế"
@@ -183,7 +183,7 @@ export const getColumns = ({ onView, onEdit, onDelete, onDeleteMany }: ActionsPr
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_tax"))
-      return <div>{formatCurrency(amount)}</div>
+      return <div className="font-bold">{formatCurrency(amount)}</div>
     },
     meta: {
       columnName: "Tổng thuế"
@@ -208,7 +208,7 @@ export const getColumns = ({ onView, onEdit, onDelete, onDeleteMany }: ActionsPr
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_after_tax"))
-      return <div>{formatCurrency(amount)}</div>
+      return <div className="font-bold">{formatCurrency(amount)}</div>
     },
     meta: {
       columnName: "Tổng sau thuế"

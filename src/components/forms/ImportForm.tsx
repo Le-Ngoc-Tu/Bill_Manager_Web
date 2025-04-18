@@ -110,6 +110,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
   // State cho phân trang
   const [currentPage, setCurrentPage] = useState(1)
+  // State để lưu trữ danh sách các chi tiết đã đánh dấu xóa
+  const [deletedDetails, setDeletedDetails] = useState<any[]>([])
   const itemsPerPage = 7
 
   // Tham chiếu cho combobox - hiện tại không sử dụng nhưng giữ lại cho tương thích trong tương lai
@@ -149,12 +151,15 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       ? {
           ...initialData,
           invoice_date: initialData.invoice_date ? new Date(initialData.invoice_date) : new Date(),
-          details: initialData.details?.map((d: any) => ({
-            ...d,
-            quantity: Number(d.quantity) || 0,
-            price_before_tax: Number(d.price_before_tax) || 0,
-            tax_rate: d.tax_rate || "0%", // Đảm bảo tax_rate luôn có giá trị
-          })) || [],
+          details: initialData.details?.map((d: any) => {
+            console.log('Processing detail in defaultValues:', d);
+            return {
+              ...d,
+              quantity: Number(d.quantity) || 0,
+              price_before_tax: Number(d.price_before_tax) || 0,
+              tax_rate: d.tax_rate || "0%", // Đảm bảo tax_rate luôn có giá trị
+            };
+          }) || [],
         }
       : {
           invoice_number: "",
@@ -234,7 +239,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
         }
 
         // Fetch inventory items sử dụng API đã tách
-        const inventoryResult = await getInventoryItems()
+        // Chỉ lấy hàng hóa loại HH cho combobox
+        const inventoryResult = await getInventoryItems(true)
         if (inventoryResult && inventoryResult.success) {
           setInventoryItems(inventoryResult.data || [])
         }
@@ -323,38 +329,67 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
   // Xử lý khi người dùng nhập hoặc chọn hàng hóa
   const handleInventoryChange = (value: string, index: number) => {
+    console.log(`handleInventoryChange called with value:`, value, 'for index:', index);
+
     // Kiểm tra xem giá trị có phải là ID của hàng hóa hiện có không
     const matchedItem = inventoryItems.find(item => item.id.toString() === value)
 
     if (matchedItem) {
+      console.log(`Matched existing inventory item by ID:`, matchedItem);
       // Nếu là hàng hóa hiện có, sử dụng thông tin của hàng hóa đó
+
+      // Đối với cả hàng hóa (HH) và chi phí (CP), lưu ID để có thể cập nhật
       form.setValue(`details.${index}.inventory_id`, matchedItem.id)
-      form.setValue(`details.${index}.item_name`, matchedItem.item_name)
+      form.setValue(`details.${index}.item_name`, matchedItem.item_name) // Lưu tên hàng hóa, không phải ID
       form.setValue(`details.${index}.unit`, matchedItem.unit)
       form.setValue(`details.${index}.category`, matchedItem.category)
     } else {
-      // Nếu là hàng hóa mới, sử dụng giá trị nhập vào làm tên hàng hóa
-      // Kiểm tra xem có phải là tên hàng hóa hiện có không
-      const matchedByName = inventoryItems.find(
-        item => item.item_name.toLowerCase() === value.toLowerCase()
-      )
+      // Kiểm tra xem value có phải là ID không
+      const isNumeric = /^\d+$/.test(value);
 
-      if (matchedByName) {
-        // Nếu tìm thấy hàng hóa theo tên, sử dụng thông tin của hàng hóa đó
-        form.setValue(`details.${index}.inventory_id`, matchedByName.id)
-        form.setValue(`details.${index}.item_name`, matchedByName.item_name)
-        form.setValue(`details.${index}.unit`, matchedByName.unit)
-        form.setValue(`details.${index}.category`, matchedByName.category)
-      } else {
-        // Nếu không tìm thấy, sử dụng giá trị nhập vào làm tên hàng hóa mới
+      if (isNumeric) {
+        console.log(`Value appears to be an ID but no matching item found:`, value);
+        // Nếu là ID nhưng không tìm thấy hàng hóa, đặt inventory_id = null
         form.setValue(`details.${index}.inventory_id`, null)
-        form.setValue(`details.${index}.item_name`, value)
-        // Để người dùng nhập đơn vị tính và chọn loại
-        if (!form.getValues(`details.${index}.unit`)) {
-          form.setValue(`details.${index}.unit`, "")
+        // Giữ nguyên item_name hiện tại nếu có
+        const currentItemName = form.getValues(`details.${index}.item_name`);
+        if (!currentItemName) {
+          form.setValue(`details.${index}.item_name`, "");
+        }
+      } else {
+        // Nếu là hàng hóa mới, sử dụng giá trị nhập vào làm tên hàng hóa
+        // Kiểm tra xem có phải là tên hàng hóa hiện có không
+        const matchedByName = inventoryItems.find(
+          item => item.item_name.toLowerCase() === value.toLowerCase()
+        )
+
+        if (matchedByName) {
+          console.log(`Matched existing inventory item by name:`, matchedByName);
+          // Nếu tìm thấy hàng hóa theo tên, sử dụng thông tin của hàng hóa đó
+          form.setValue(`details.${index}.inventory_id`, matchedByName.id)
+          form.setValue(`details.${index}.item_name`, matchedByName.item_name)
+          form.setValue(`details.${index}.unit`, matchedByName.unit)
+          form.setValue(`details.${index}.category`, matchedByName.category)
+        } else {
+          console.log(`Creating new inventory item with name:`, value);
+          // Nếu không tìm thấy, sử dụng giá trị nhập vào làm tên hàng hóa mới
+          form.setValue(`details.${index}.inventory_id`, null)
+          form.setValue(`details.${index}.item_name`, value)
+          // Để người dùng nhập đơn vị tính và chọn loại
+          if (!form.getValues(`details.${index}.unit`)) {
+            form.setValue(`details.${index}.unit`, "")
+          }
         }
       }
     }
+
+    // Ghi log giá trị cuối cùng
+    console.log(`Final values for row ${index}:`, {
+      inventory_id: form.getValues(`details.${index}.inventory_id`),
+      item_name: form.getValues(`details.${index}.item_name`),
+      unit: form.getValues(`details.${index}.unit`),
+      category: form.getValues(`details.${index}.category`)
+    });
 
     handleDetailFieldChange(index)
   }
@@ -450,50 +485,65 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
   }
 
-  // Xử lý thêm mới hàng hóa
+  // Xử lý thêm mới hàng hóa (chỉ hiển thị trong bảng, không lưu vào cơ sở dữ liệu)
   const handleAddInventory = async (data: InventoryFormValues) => {
     try {
       setLoading(true)
-      const result = await createInventoryItem(data)
 
-      if (result && result.success) {
-        const newInventory = result.data
+      console.log('Adding inventory item to table:', data);
 
-        // Cập nhật danh sách hàng hóa
-        setInventoryItems([...inventoryItems, newInventory])
+      // Tạo một đối tượng hàng hóa tạm thời
+      const tempInventory = {
+        id: null, // Không có ID vì chưa lưu vào cơ sở dữ liệu
+        item_name: data.item_name,
+        unit: data.unit,
+        quantity: data.quantity,
+        category: data.category,
+        price: data.category === 'CP' ? form.getValues(`details.${currentDetailIndex}.price_before_tax`) || 0 : 0
+      };
 
-        // Áp dụng hàng hóa vừa tạo vào dòng hiện tại
-        if (currentDetailIndex !== null) {
-          // Reset các giá trị trước khi áp dụng hàng hóa mới
-          form.setValue(`details.${currentDetailIndex}.price_before_tax`, 0)
-          form.setValue(`details.${currentDetailIndex}.tax_rate`, "10%")
+      // Áp dụng hàng hóa vào dòng hiện tại
+      if (currentDetailIndex !== null) {
+        // Reset các giá trị trước khi áp dụng hàng hóa mới
+        form.setValue(`details.${currentDetailIndex}.price_before_tax`, tempInventory.price)
+        form.setValue(`details.${currentDetailIndex}.tax_rate`, "10%")
 
-          // Áp dụng hàng hóa mới
-          handleInventoryChange(newInventory.id.toString(), currentDetailIndex)
+        // Áp dụng hàng hóa mới và cập nhật đơn vị tính trực tiếp
+        // Đặt inventory_id = null vì chưa lưu vào cơ sở dữ liệu
+        // Khi nhấn nút "Thêm hóa đơn", hệ thống sẽ tạo hàng hóa mới và lưu ID
+        form.setValue(`details.${currentDetailIndex}.inventory_id`, null)
+        form.setValue(`details.${currentDetailIndex}.item_name`, tempInventory.item_name)
+        form.setValue(`details.${currentDetailIndex}.unit`, tempInventory.unit)
+        form.setValue(`details.${currentDetailIndex}.category`, tempInventory.category)
+
+        // Đối với chi phí, sử dụng số lượng đã nhập trong form thêm hàng hóa
+        if (data.category === 'CP' && data.quantity > 0) {
+          console.log(`Setting quantity for expense item to ${data.quantity}`);
+          form.setValue(`details.${currentDetailIndex}.quantity`, data.quantity);
         }
 
-        setIsInventoryModalOpen(false)
-        inventoryForm.reset()
+        // Cập nhật giao diện
+        form.trigger(`details.${currentDetailIndex}`)
 
-        // Hiển thị thông báo thành công
-        toast.success("Thêm hàng hóa thành công", {
-          description: `Đã thêm hàng hóa ${newInventory.item_name} vào hệ thống`,
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        })
-      } else {
-        setError("Không thể tạo hàng hóa mới")
-        toast.error("Không thể tạo hàng hóa mới", {
-          description: result?.message || "Vui lòng kiểm tra lại thông tin",
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        })
+        // Cập nhật các tính toán
+        handleDetailFieldChange(currentDetailIndex)
+        calculateDetailTotals(currentDetailIndex)
       }
+
+      setIsInventoryModalOpen(false)
+      inventoryForm.reset()
+
+      // Hiển thị thông báo thành công
+      toast.success("Thêm hàng hóa thành công", {
+        description: `Đã thêm hàng hóa ${tempInventory.item_name} vào bảng`,
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      })
     } catch (err) {
       console.error("Error adding inventory:", err)
-      setError("Đã xảy ra lỗi khi tạo hàng hóa mới")
+      setError("Đã xảy ra lỗi khi thêm hàng hóa")
       toast.error("Đã xảy ra lỗi", {
-        description: "Đã xảy ra lỗi khi tạo hàng hóa mới",
+        description: "Đã xảy ra lỗi khi thêm hàng hóa",
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       })
@@ -524,99 +574,18 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       const details = form.getValues("details");
       const detail = details[index];
 
-      // Kiểm tra xem chi tiết có ID không (nếu không có ID thì là chi tiết mới)
-      if (!detail.id) {
-        // Nếu là chi tiết mới, gọi API để thêm vào cơ sở dữ liệu
-        // Chuẩn bị dữ liệu gửi đi
-        const detailData = {
-          ...detail,
-          quantity: Number(detail.quantity),
-          price_before_tax: Number(detail.price_before_tax),
-          // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-          total_before_tax: undefined,
-          total_after_tax: undefined,
-          tax_amount: undefined
-        };
+      // Tính toán lại các giá trị tổng
+      calculateDetailTotals(index);
 
-        const result = await addImportDetail(initialData.id, detailData);
+      // Tắt chế độ chỉnh sửa
+      setEditingRowIndex(null);
 
-        if (result && result.success) {
-          // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-          const updatedImport = result.data.import;
-          const updatedDetails = updatedImport.details.map((d: any) => ({
-            ...d,
-            quantity: Number(d.quantity) || 0,
-            price_before_tax: Number(d.price_before_tax) || 0,
-            tax_rate: d.tax_rate || "0%"
-          }));
-
-          // Cập nhật lại form với dữ liệu mới
-          form.setValue("details", updatedDetails);
-
-          // Tắt chế độ chỉnh sửa
-          setEditingRowIndex(null);
-
-          // Hiển thị thông báo thành công
-          toast.success("Thêm hàng hóa thành công", {
-            description: `Đã thêm hàng hóa ${detail.item_name} vào hóa đơn`,
-            className: "text-lg font-medium",
-            descriptionClassName: "text-base"
-          });
-
-          return;
-        } else {
-          // Hiển thị thông báo lỗi
-          setError("Không thể thêm hàng hóa");
-          toast.error("Không thể thêm hàng hóa", {
-            description: result?.message || "Vui lòng kiểm tra lại thông tin",
-            className: "text-lg font-medium",
-            descriptionClassName: "text-base"
-          });
-          return;
-        }
-      }
-
-      // Chuẩn bị dữ liệu gửi đi
-      const detailData = {
-        ...detail,
-        quantity: Number(detail.quantity),
-        price_before_tax: Number(detail.price_before_tax),
-        // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-        total_before_tax: undefined,
-        total_after_tax: undefined,
-        tax_amount: undefined
-      };
-
-      const result = await updateImportDetail(initialData.id, detail.id, detailData);
-
-      if (result && result.success) {
-        // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-        const updatedImport = result.data.import;
-        const updatedDetails = updatedImport.details.map((d: any) => ({
-          ...d,
-          quantity: Number(d.quantity) || 0,
-          price_before_tax: Number(d.price_before_tax) || 0,
-          tax_rate: d.tax_rate || "0%"
-        }));
-
-        // Cập nhật lại form với dữ liệu mới
-        form.setValue("details", updatedDetails);
-
-        // Hiển thị thông báo thành công
-        toast.success("Cập nhật hàng hóa thành công", {
-          description: `Đã cập nhật hàng hóa ${detail.item_name}`,
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        });
-      } else {
-        // Hiển thị thông báo lỗi
-        setError("Không thể cập nhật hàng hóa");
-        toast.error("Không thể cập nhật hàng hóa", {
-          description: result?.message || "Vui lòng kiểm tra lại thông tin",
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        });
-      }
+      // Hiển thị thông báo thành công
+      toast.success("Cập nhật hàng hóa thành công", {
+        description: `Đã cập nhật hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      });
     } catch (err) {
       console.error("Error updating detail in edit mode:", err);
       setError("Đã xảy ra lỗi khi cập nhật hàng hóa");
@@ -641,43 +610,42 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       const details = form.getValues("details");
       const detail = details[index];
 
-      // Kiểm tra xem chi tiết có ID không (nếu không có ID thì là chi tiết mới chưa lưu)
+      // Đánh dấu chi tiết này đã bị xóa bằng cách thêm trường _deleted
+      // Nếu là chi tiết mới chưa có ID, xóa khỏi mảng
+      // Nếu là chi tiết đã có ID, đánh dấu để xóa khi submit form
       if (!detail.id) {
         // Nếu là chi tiết mới chưa lưu, chỉ cần xóa khỏi form
         remove(index);
-        return;
-      }
-
-      const result = await deleteImportDetail(initialData.id, detail.id);
-
-      if (result && result.success) {
-        // Cập nhật lại dữ liệu form với dữ liệu mới từ server
-        const updatedImport = result.data.import;
-        const updatedDetails = updatedImport.details.map((d: any) => ({
-          ...d,
-          quantity: Number(d.quantity) || 0,
-          price_before_tax: Number(d.price_before_tax) || 0,
-          tax_rate: d.tax_rate || "0%"
-        }));
-
-        // Cập nhật lại form với dữ liệu mới
-        form.setValue("details", updatedDetails);
 
         // Hiển thị thông báo thành công
         toast.success("Xóa hàng hóa thành công", {
-          description: `Đã xóa hàng hóa ${detail.item_name} khỏi hóa đơn`,
+          description: `Đã xóa hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
         });
-      } else {
-        // Hiển thị thông báo lỗi
-        setError("Không thể xóa hàng hóa");
-        toast.error("Không thể xóa hàng hóa", {
-          description: result?.message || "Vui lòng kiểm tra lại thông tin",
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        });
+        return;
       }
+
+      // Nếu là chi tiết đã có trong cơ sở dữ liệu, đánh dấu để xóa khi submit form
+      // Lưu chi tiết vào danh sách các chi tiết đã đánh dấu xóa
+      setDeletedDetails(prev => [...prev, detail]);
+
+      // Xóa chi tiết khỏi form
+      remove(index);
+
+      // Đảm bảo các trường bắt buộc được cập nhật đúng cách
+      // Trigger validation cho tất cả các trường
+      form.trigger();
+
+      console.log("Form values after delete:", form.getValues());
+      console.log("Form errors after delete:", form.formState.errors);
+
+      // Hiển thị thông báo thành công
+      toast.success("Xóa hàng hóa thành công", {
+        description: `Đã xóa hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      });
     } catch (err) {
       console.error("Error deleting detail in edit mode:", err);
       setError("Đã xảy ra lỗi khi xóa hàng hóa");
@@ -696,17 +664,91 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     // Đánh dấu form đã được submit
     setIsSubmitted(true);
 
-    // Đảm bảo trường note được gửi đúng cách
+    // Kiểm tra lỗi trước khi submit
+    const isValid = await form.trigger();
+    if (!isValid) {
+      console.log("Form validation failed:", form.formState.errors);
+      toast.error("Vui lòng kiểm tra lại thông tin", {
+        description: "Có một số trường bắt buộc chưa được nhập",
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      });
+      return;
+    }
+
     // Tạo một bản sao của dữ liệu và đặt trường note rõ ràng
     const formData = {
       ...data,
-      note: data.note === undefined || data.note === null ? "" : data.note
+      note: data.note === undefined || data.note === null ? "" : data.note,
+      // Đảm bảo các chi tiết có tên hàng hóa được gửi đúng
+      details: data.details.map(detail => ({
+        ...detail,
+        // Đảm bảo item_name là chuỗi
+        item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
+      }))
     };
+
+    // Kiểm tra xem có chi tiết nào đã được đánh dấu xóa không
+    if (mode === "edit" && initialData?.id) {
+      setLoading(true);
+      try {
+        // 1. Xử lý xóa các chi tiết đã đánh dấu
+        if (deletedDetails.length > 0) {
+          console.log("Found deleted details:", deletedDetails);
+
+          // Xóa từng chi tiết đã đánh dấu
+          for (const detail of deletedDetails) {
+            if (detail.id) {
+              console.log(`Deleting detail with ID ${detail.id}`);
+              await deleteImportDetail(initialData.id, detail.id);
+            }
+          }
+
+          // Xóa danh sách các chi tiết đã đánh dấu xóa
+          setDeletedDetails([]);
+        }
+
+        // 2. Cập nhật các chi tiết đã thay đổi
+        const details = formData.details;
+        for (const detail of details) {
+          if (detail.id) {
+            console.log(`Updating detail with ID ${detail.id}`);
+            // Chuẩn bị dữ liệu gửi đi
+            const detailData = {
+              ...detail,
+              quantity: Number(detail.quantity),
+              price_before_tax: Number(detail.price_before_tax),
+              // Đảm bảo item_name là chuỗi
+              item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
+              // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
+              inventory_id: detail.inventory_id,
+              // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
+              total_before_tax: undefined,
+              total_after_tax: undefined,
+              tax_amount: undefined
+            };
+
+            await updateImportDetail(initialData.id, detail.id, detailData);
+          }
+        }
+      } catch (error) {
+        console.error("Error processing details:", error);
+        toast.error("Đã xảy ra lỗi khi xử lý hàng hóa", {
+          description: "Vui lòng kiểm tra lại thông tin và thử lại",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
+        setLoading(false);
+        return;
+      }
+      setLoading(false);
+    }
 
     // Debug dữ liệu form
     console.log("Original form data:", data);
     console.log("Modified form data being submitted:", formData);
     console.log("Note field in form data:", formData.note);
+    console.log("Details in form data:", formData.details);
     // Kiểm tra xem có hàng hóa mới nào chưa được lưu không
     if (mode === "edit" && initialData?.id) {
       const details = formData.details;
@@ -739,10 +781,18 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 ...detail,
                 quantity: Number(detail.quantity),
                 price_before_tax: Number(detail.price_before_tax),
+                // Đảm bảo item_name là chuỗi
+                item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
+                // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
+                inventory_id: detail.inventory_id,
                 total_before_tax: undefined,
                 total_after_tax: undefined,
                 tax_amount: undefined
               };
+
+              console.log('New detail data with inventory_id:', detail.inventory_id);
+
+              console.log('Sending detail data to backend:', detailData);
 
               // Gọi API để thêm hàng hóa mới
               const result = await addImportDetail(initialData.id, detailData);
@@ -750,28 +800,82 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
               if (result && result.success) {
                 // Cập nhật lại dữ liệu form với dữ liệu mới từ server
                 const updatedImport = result.data.import;
+
+                // Lưu lại toàn bộ dữ liệu form hiện tại
+                const currentFormValues = form.getValues();
+
+                // Tạo một bản sao của chi tiết đã được cập nhật
                 const updatedDetails = updatedImport.details.map((d: any) => ({
                   ...d,
                   quantity: Number(d.quantity) || 0,
                   price_before_tax: Number(d.price_before_tax) || 0,
-                  tax_rate: d.tax_rate || "0%"
+                  tax_rate: d.tax_rate || "0%",
+                  // Đảm bảo item_name luôn được cập nhật
+                  item_name: d.item_name || ""
                 }));
 
-                // Cập nhật lại form với dữ liệu mới
-                form.setValue("details", updatedDetails);
+                // Tạo một bản sao của toàn bộ dữ liệu form với chi tiết đã được cập nhật
+                const newFormValues = {
+                  ...currentFormValues,
+                  invoice_number: updatedImport.invoice_number || currentFormValues.invoice_number,
+                  invoice_date: updatedImport.invoice_date ? new Date(updatedImport.invoice_date) : currentFormValues.invoice_date,
+                  description: updatedImport.description !== undefined ? updatedImport.description : currentFormValues.description,
+                  note: updatedImport.note !== undefined ? updatedImport.note : currentFormValues.note,
+                  details: updatedDetails
+                };
+
+                // Reset form với dữ liệu mới
+                form.reset(newFormValues);
+
+                // Đảm bảo các trường bắt buộc được cập nhật đúng cách
+                // Trigger validation cho tất cả các trường
+                form.trigger();
+
+                console.log("Form values after adding new detail in handleFormSubmit:", form.getValues());
+                console.log("Form errors after adding new detail in handleFormSubmit:", form.formState.errors);
               }
             }
           }
 
           // Sau khi lưu tất cả hàng hóa mới, gọi hàm onSubmit để cập nhật hóa đơn
           const updatedFormValues = form.getValues();
+
           // Đảm bảo trường note được gửi đúng cách
           const updatedData = {
             ...updatedFormValues,
-            note: updatedFormValues.note === undefined || updatedFormValues.note === null ? "" : updatedFormValues.note
+            invoice_number: updatedFormValues.invoice_number || "",
+            invoice_date: updatedFormValues.invoice_date || new Date(),
+            description: updatedFormValues.description || "",
+            note: updatedFormValues.note === undefined || updatedFormValues.note === null ? "" : updatedFormValues.note,
+            details: updatedFormValues.details.map((detail: any) => ({
+              ...detail,
+              item_name: detail.item_name || "",
+              unit: detail.unit || "",
+              quantity: Number(detail.quantity) || 0,
+              price_before_tax: Number(detail.price_before_tax) || 0,
+              tax_rate: detail.tax_rate || "0%"
+            }))
           };
-          console.log("Updated data after saving details:", updatedData);
-          onSubmit(updatedData);
+
+          // Reset form với dữ liệu mới để đảm bảo tất cả các trường được cập nhật đúng cách
+          form.reset(updatedData);
+
+          // Kiểm tra lại lỗi trước khi submit
+          const isValid = await form.trigger();
+          if (!isValid) {
+            console.log("Form validation failed after saving details:", form.formState.errors);
+            toast.error("Vui lòng kiểm tra lại thông tin", {
+              description: "Có một số trường bắt buộc chưa được nhập",
+              className: "text-lg font-medium",
+              descriptionClassName: "text-base"
+            });
+            return;
+          }
+
+          // Lấy lại dữ liệu form sau khi reset và validate
+          const finalData = form.getValues();
+          console.log("Final data after saving details:", finalData);
+          onSubmit(finalData);
         } catch (error) {
           console.error("Error saving new details:", error);
           toast.error("Đã xảy ra lỗi khi lưu hàng hóa mới", {
@@ -788,8 +892,30 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
 
     // Nếu không có hàng hóa mới hoặc không phải chế độ chỉnh sửa, gọi hàm onSubmit bình thường
-    // Sử dụng formData đã được xử lý để đảm bảo trường note được gửi đúng cách
-    onSubmit(formData);
+    // Đảm bảo tất cả các trường được cập nhật đúng cách
+    const updatedData = {
+      ...formData,
+      invoice_number: formData.invoice_number || "",
+      invoice_date: formData.invoice_date || new Date(),
+      description: formData.description || "",
+      note: formData.note === undefined || formData.note === null ? "" : formData.note,
+      details: formData.details.map((detail: any) => ({
+        ...detail,
+        item_name: detail.item_name || "",
+        unit: detail.unit || "",
+        quantity: Number(detail.quantity) || 0,
+        price_before_tax: Number(detail.price_before_tax) || 0,
+        tax_rate: detail.tax_rate || "0%"
+      }))
+    };
+
+    // Reset form với dữ liệu mới để đảm bảo tất cả các trường được cập nhật đúng cách
+    form.reset(updatedData);
+
+    // Lấy lại dữ liệu form sau khi reset
+    const finalData = form.getValues();
+    console.log("Final data for submit:", finalData);
+    onSubmit(finalData);
   };
 
   // Hàm xử lý khi submit form không hợp lệ
@@ -895,7 +1021,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           <div className="p-2 md:p-4 border rounded-md bg-gray-50 space-y-1 md:space-y-2 max-w-full">
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
               <span className="font-medium text-sm md:text-base">Tổng tiền trước thuế:</span>
-              <span className="text-sm md:text-base">
+              <span className="text-sm md:text-base font-bold">
                 {formatCurrency(
                   roundToThreeDecimals(
                     form.getValues("details")?.reduce(
@@ -908,7 +1034,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
             </div>
             <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
               <span className="font-medium text-sm md:text-base">Tổng tiền thuế:</span>
-              <span className="text-sm md:text-base">
+              <span className="text-sm md:text-base font-bold">
                 {formatCurrency(
                   roundToThreeDecimals(
                     form.getValues("details")?.reduce(
@@ -1004,7 +1130,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                   <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[25%] min-w-[120px]">
                     Tên hàng
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg hidden md:table-cell w-[6%]">
+                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[6%]">
                     Đơn vị
                   </TableHead>
                   <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[6%] min-w-[80px]">
@@ -1080,16 +1206,28 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                         }))
 
                                         // Xác định giá trị hiện tại (ID hoặc tên hàng hóa)
-                                        const currentValue = field.value
-                                          ? field.value.toString()
-                                          : form.getValues(`details.${actualIndex}.item_name`) || ""
+                                        // Đối với chi phí, luôn sử dụng tên hàng hóa thay vì ID
+                                        const category = form.getValues(`details.${actualIndex}.category`);
+                                        const currentValue = (category === 'CP' || !field.value)
+                                          ? form.getValues(`details.${actualIndex}.item_name`) || ""
+                                          : field.value.toString()
+
+                                        console.log(`Combobox current value for row ${actualIndex}:`, currentValue, 'item_name:', form.getValues(`details.${actualIndex}.item_name`))
 
                                         return (
                                           <Combobox
                                             options={inventoryOptions}
                                             value={currentValue}
-                                            onChange={(value) => handleInventoryChange(value, actualIndex)}
-                                            onInputChange={(value) => handleInventoryInputChange(value, actualIndex)}
+                                            onChange={(value) => {
+                                              console.log(`Combobox onChange called with value:`, value);
+                                              handleInventoryChange(value, actualIndex);
+                                            }}
+                                            onInputChange={(value) => {
+                                              console.log(`Combobox onInputChange called with value:`, value);
+                                              handleInventoryInputChange(value, actualIndex);
+                                              // Khi người dùng nhập trực tiếp, cập nhật luôn vào item_name
+                                              form.setValue(`details.${actualIndex}.item_name`, value);
+                                            }}
                                             placeholder="Chọn hoặc nhập tên hàng hóa"
                                             emptyMessage="Không tìm thấy hàng hóa. Nhập tên để tạo mới."
                                             allowCustomValue={true}
@@ -1125,6 +1263,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                 <Input
                                   type="hidden"
                                   {...form.register(`details.${actualIndex}.item_name`)}
+                                  onChange={(e) => {
+                                    console.log(`Hidden input onChange called with value:`, e.target.value);
+                                  }}
                                 />
                                 {isSubmitted && form.formState.errors.details?.[actualIndex]?.item_name && (
                                   <p className="text-red-500 text-xs">{form.formState.errors.details?.[actualIndex]?.item_name?.message}</p>
@@ -1134,12 +1275,19 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                           </div>
                         </div>
                       </TableCell>
-                      <TableCell className="px-1 md:px-2 py-2 md:py-3 hidden md:table-cell text-center text-sm md:text-base">
-                        <span className="text-sm md:text-base">
-                          {form.getValues(`details.${actualIndex}.unit`) || ""}
-                        </span>
+                      <TableCell className="px-1 md:px-2 py-2 md:py-3 text-center text-sm md:text-base">
+                        <Controller
+                          name={`details.${actualIndex}.unit`}
+                          control={form.control}
+                          render={({ field }) => (
+                            <span className="text-sm md:text-base">
+                              {field.value || ""}
+                            </span>
+                          )}
+                        />
                       </TableCell>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-sm md:text-base">
+                        {/* Hiển thị số lượng cho cả hàng hóa và chi phí */}
                         <Input
                           type="text"
                           inputMode="decimal"
@@ -1554,7 +1702,10 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           <DialogHeader>
             <DialogTitle className="text-lg md:text-xl">Thêm người bán mới</DialogTitle>
           </DialogHeader>
-          <form onSubmit={supplierForm.handleSubmit(handleAddSupplier)} className="space-y-4 md:space-y-8">
+          <form onSubmit={(e) => {
+            e.preventDefault(); // Ngăn form chính tự động submit
+            supplierForm.handleSubmit(handleAddSupplier)(e);
+          }} className="space-y-4 md:space-y-8">
             <div className="space-y-4 md:space-y-6">
               <div>
                 <Label htmlFor="name" className="text-sm md:text-base mb-2 md:mb-3 block">Tên người bán *</Label>
@@ -1631,7 +1782,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           <DialogHeader>
             <DialogTitle className="text-lg md:text-xl">Thêm hàng hóa mới</DialogTitle>
           </DialogHeader>
-          <form onSubmit={inventoryForm.handleSubmit(handleAddInventory)} className="space-y-4 md:space-y-8">
+          <div className="space-y-4 md:space-y-8">
             <div className="space-y-4 md:space-y-6">
               <div>
                 <Label htmlFor="item_name" className="text-sm md:text-base mb-2 md:mb-3 block">Tên hàng hóa *</Label>
@@ -1663,7 +1814,11 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                   render={({ field }) => (
                     <Select
                       value={field.value}
-                      onValueChange={field.onChange}
+                      onValueChange={(value) => {
+                        field.onChange(value);
+                        // Reset số lượng về 0 khi chuyển loại
+                        inventoryForm.setValue("quantity", 0);
+                      }}
                     >
                       <SelectTrigger className="h-10 md:h-12 text-sm md:text-base">
                         <SelectValue placeholder="Chọn loại" />
@@ -1679,7 +1834,40 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                   <p className="text-red-500 text-xs md:text-sm mt-1">{inventoryForm.formState.errors.category.message}</p>
                 )}
               </div>
-              {/* Ố nhập số lượng ban đầu đã được bỏ đi, mặc định là 0 */}
+
+              {/* Hiển thị ô nhập số lượng khi loại là chi phí */}
+              {inventoryForm.watch("category") === "CP" && (
+                <div>
+                  <Label htmlFor="quantity" className="text-sm md:text-base mb-2 md:mb-3 block">Số lượng</Label>
+                  <Input
+                    id="quantity"
+                    type="text"
+                    inputMode="decimal"
+                    {...inventoryForm.register("quantity", {
+                      setValueAs: (value) => {
+                        if (value === "" || value === ".") return 0;
+                        return parseFloat(value) || 0;
+                      }
+                    })}
+                    className="h-10 md:h-12 text-sm md:text-base"
+                    onChange={(e) => {
+                      // Chỉ cho phép nhập số và dấu chấm
+                      let value = e.target.value;
+                      value = value.replace(/[^0-9.]/g, "");
+
+                      // Đếm số dấu chấm trong chuỗi
+                      const dotCount = (value.match(/\./g) || []).length;
+                      if (dotCount > 1) {
+                        const parts = value.split('.');
+                        value = parts[0] + '.' + parts.slice(1).join('');
+                      }
+
+                      e.target.value = value;
+                      inventoryForm.setValue("quantity", value === "" || value === "." ? 0 : parseFloat(value) || 0);
+                    }}
+                  />
+                </div>
+              )}
             </div>
             <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 md:gap-4">
               <Button
@@ -1691,14 +1879,30 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 Hủy
               </Button>
               <Button
-                type="submit"
+                type="button"
                 className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
                 disabled={loading}
+                onClick={() => {
+                  // Kiểm tra validation của form thêm hàng hóa
+                  inventoryForm.trigger().then(isValid => {
+                    if (isValid) {
+                      // Nếu hợp lệ, gọi hàm xử lý thêm hàng hóa
+                      handleAddInventory(inventoryForm.getValues());
+                    } else {
+                      // Hiển thị thông báo lỗi
+                      toast.error("Vui lòng kiểm tra lại thông tin", {
+                        description: "Có một số trường bắt buộc chưa được nhập",
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
+                      });
+                    }
+                  });
+                }}
               >
                 {loading ? "Đang xử lý..." : "Thêm hàng hóa"}
               </Button>
             </DialogFooter>
-          </form>
+          </div>
         </DialogContent>
       </Dialog>
     </form>

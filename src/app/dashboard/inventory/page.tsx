@@ -15,6 +15,13 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 import { InventoryForm } from "@/components/forms/InventoryForm"
 import { DataTable } from "@/components/ui/data-table"
 import { getColumns } from "./columns"
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select"
 
 // Import các API
 import { getInventoryItems, getInventoryItemById, createInventoryItem, updateInventoryItem, deleteInventoryItem, Inventory } from "@/lib/api/inventory"
@@ -37,6 +44,7 @@ export default function InventoryPage() {
   const [selectedItems, setSelectedItems] = useState<Inventory[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
+  const [categoryFilter, setCategoryFilter] = useState<string>("all") // "all" = tất cả, "HH" = hàng hóa, "CP" = chi phí
 
   useEffect(() => {
     if (!loading && !user) {
@@ -53,10 +61,13 @@ export default function InventoryPage() {
   const fetchData = async () => {
     try {
       setIsLoading(true)
-      const result = await getInventoryItems()
+      // Gửi tham số category nếu có lọc theo loại (chỉ gửi khi không phải "all")
+      const category = categoryFilter === "all" ? "" : categoryFilter
+      const result = await getInventoryItems(false, category)
 
       if (result && result.success) {
         const inventoryData = result.data || [];
+        console.log('Inventory data received in frontend:', inventoryData);
         setInventoryItems(inventoryData);
       } else {
         setError("Không thể tải dữ liệu hàng hóa")
@@ -69,12 +80,12 @@ export default function InventoryPage() {
     }
   }
 
-  // Tải dữ liệu khi component được mount
+  // Tải dữ liệu khi component được mount hoặc khi thay đổi bộ lọc
   useEffect(() => {
     if (user) {
       fetchData()
     }
-  }, [user])
+  }, [user, categoryFilter])
 
   // Xử lý xóa hàng hóa
   const [isDeleting, setIsDeleting] = useState(false)
@@ -101,9 +112,11 @@ export default function InventoryPage() {
           descriptionClassName: "text-base"
         })
       }
-    } catch (err) {
+    } catch (err: any) {
       console.error("Error deleting inventory item:", err)
-      toast.error("Đã xảy ra lỗi khi xóa hàng hóa", {
+      // Hiển thị thông báo lỗi cụ thể từ backend nếu có
+      const errorMessage = err.response?.data?.message || "Đã xảy ra lỗi khi xóa hàng hóa"
+      toast.error(errorMessage, {
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       })
@@ -135,6 +148,7 @@ export default function InventoryPage() {
       setIsBatchDeleting(true)
       let successCount = 0
       let errorCount = 0
+      let errorMessages: string[] = []
 
       // Xử lý từng hàng hóa
       for (const item of selectedItems) {
@@ -144,10 +158,15 @@ export default function InventoryPage() {
             successCount++
           } else {
             errorCount++
+            if (result?.message) {
+              errorMessages.push(`${item.item_name}: ${result.message}`)
+            }
           }
-        } catch (err) {
+        } catch (err: any) {
           console.error(`Error deleting inventory item ${item.id}:`, err)
           errorCount++
+          const errorMessage = err.response?.data?.message || `Lỗi khi xóa ${item.item_name}`
+          errorMessages.push(`${item.item_name}: ${errorMessage}`)
         }
       }
 
@@ -159,7 +178,12 @@ export default function InventoryPage() {
         })
       }
       if (errorCount > 0) {
+        // Hiển thị tối đa 3 lỗi đầu tiên
+        const displayErrors = errorMessages.slice(0, 3).join('\n')
+        const moreErrors = errorMessages.length > 3 ? `\nVà ${errorMessages.length - 3} lỗi khác...` : ''
+
         toast.error(`Có ${errorCount} hàng hóa xóa thất bại`, {
+          description: displayErrors + moreErrors,
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
         })
@@ -246,6 +270,8 @@ export default function InventoryPage() {
               </div>
             )}
 
+            {/* Bỏ đi label bên cạnh bộ lọc */}
+
             {/* Bảng dữ liệu sử dụng DataTable */}
             <DataTable
               columns={getColumns({
@@ -264,6 +290,21 @@ export default function InventoryPage() {
               searchColumn="item_name"
               searchPlaceholder="Tìm kiếm hàng hóa..."
               onDeleteSelected={handleBatchDelete}
+              categoryFilter={
+                <Select
+                  value={categoryFilter}
+                  onValueChange={(value) => setCategoryFilter(value)}
+                >
+                  <SelectTrigger className="w-[150px] h-10 md:h-12 text-sm md:text-base ml-2">
+                    <SelectValue placeholder="Chọn loại" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả</SelectItem>
+                    <SelectItem value="HH">Hàng hóa</SelectItem>
+                    <SelectItem value="CP">Chi phí</SelectItem>
+                  </SelectContent>
+                </Select>
+              }
               actionButton={
                 <Button
                   onClick={() => {

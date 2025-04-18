@@ -123,11 +123,18 @@ export function UserForm({ mode, initialData, onSubmit, onCancel, stickyFooter =
         }
       } else {
         // Cập nhật người dùng
-        if (!initialData) {
-          setError("Không tìm thấy thông tin người dùng")
+        if (!initialData || !initialData.id) {
+          setError("Không tìm thấy ID người dùng")
+          toast.error("Không thể cập nhật người dùng", {
+            description: "ID người dùng không hợp lệ",
+            className: "text-lg font-medium",
+            descriptionClassName: "text-base"
+          })
           return
         }
 
+        // Log ID để debug
+        console.log("Updating user with ID:", initialData.id)
         result = await updateUser(initialData.id, values)
 
         if (result && result.code === 1) {

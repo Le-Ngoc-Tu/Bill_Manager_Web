@@ -73,7 +73,11 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
           </div>
         )
       },
-      cell: ({ row }) => <div>{row.getValue("item_name")}</div>,
+      cell: ({ row }) => {
+        const itemName = row.getValue("item_name");
+        console.log('Rendering item_name:', itemName, 'for row:', row.original);
+        return <div>{itemName}</div>;
+      },
       meta: {
         columnName: "Tên hàng hóa"
       },

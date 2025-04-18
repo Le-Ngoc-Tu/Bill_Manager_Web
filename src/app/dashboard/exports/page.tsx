@@ -477,18 +477,18 @@ export default function ExportsPage() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                     <div className="flex items-center">
                       <p className="text-base md:text-xl font-bold mr-2">Tổng tiền trước thuế:</p>
-                      <p className="text-base md:text-xl">{formatCurrency(selectedExport.total_before_tax)}</p>
+                      <p className="text-base md:text-xl font-bold">{formatCurrency(selectedExport.total_before_tax)}</p>
                     </div>
                     <div className="flex items-center">
                       <p className="text-base md:text-xl font-bold mr-2">Tổng thuế:</p>
-                      <p className="text-base md:text-xl">{formatCurrency(selectedExport.total_tax)}</p>
+                      <p className="text-base md:text-xl font-bold">{formatCurrency(selectedExport.total_tax)}</p>
                     </div>
                   </div>
 
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
                     <div className="flex items-center">
                       <p className="text-base md:text-xl font-bold mr-2">Tổng tiền sau thuế:</p>
-                      <p className="text-base md:text-xl">{formatCurrency(selectedExport.total_after_tax)}</p>
+                      <p className="text-base md:text-xl font-bold">{formatCurrency(selectedExport.total_after_tax)}</p>
                     </div>
                     {selectedExport.description && (
                       <div className="flex items-center">
@@ -531,11 +531,11 @@ export default function ExportsPage() {
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell">{detail.category}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center">{detail.unit}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center">{formatQuantity(detail.quantity)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right">{formatCurrency(detail.price_before_tax)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden md:table-cell">{formatCurrency(detail.total_before_tax)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell">{detail.tax_rate}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden lg:table-cell">{formatCurrency(detail.tax_amount)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right">{formatCurrency(detail.total_after_tax)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">{formatCurrency(detail.price_before_tax)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden md:table-cell font-bold">{formatCurrency(detail.total_before_tax)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell font-bold">{detail.tax_rate}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden lg:table-cell font-bold">{formatCurrency(detail.tax_amount)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">{formatCurrency(detail.total_after_tax)}</TableCell>
                             </TableRow>
                           ))}
                         </TableBody>

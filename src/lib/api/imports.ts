@@ -90,20 +90,29 @@ export const createImport = async (data: ImportFormData) => {
     // Sử dụng chuỗi rỗng nếu note là undefined hoặc null
     const noteValue = data.note === undefined || data.note === null ? "" : data.note;
 
+    // Đảm bảo có seller_name (bắt buộc theo backend)
+    let sellerName = data.details[0]?.seller_name || '';
+    if (!sellerName) {
+      // Nếu không có seller_name, sử dụng giá trị mặc định
+      sellerName = "Nhà cung cấp";
+    }
+
     const submitData = {
       ...data,
       invoice_date: format(data.invoice_date, 'yyyy-MM-dd'),
       // Đảm bảo trường note được gửi đúng cách
       // Luôn gửi chuỗi rỗng khi người dùng muốn xóa ghi chú
       note: noteValue,
-      // Thêm seller_name từ detail đầu tiên nếu có
-      seller_name: data.details[0]?.seller_name || '',
+      // Đảm bảo luôn có seller_name
+      seller_name: sellerName,
       seller_tax_code: data.details[0]?.seller_tax_code || '',
       // Đảm bảo các trường số được gửi đúng định dạng
       details: data.details.map(d => ({
         ...d,
         quantity: Number(d.quantity),
         price_before_tax: Number(d.price_before_tax),
+        // Đảm bảo mỗi chi tiết đều có seller_name
+        seller_name: d.seller_name || sellerName,
         // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
         total_before_tax: undefined,
         total_after_tax: undefined,
