@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 
 // Định nghĩa kiểu dữ liệu
 export interface User {
@@ -32,11 +31,9 @@ export const getUsers = async (search?: string) => {
     if (search) {
       params.append('search', search);
     }
-    
-    const response = await axios.get(`${API_URL}/users?${params.toString()}`, {
-      headers: getAuthHeader()
-    });
-    
+
+    const response = await apiClient.get(`/users?${params.toString()}`);
+
     return response.data;
   } catch (error) {
     console.error("Error fetching users:", error);
@@ -47,10 +44,8 @@ export const getUsers = async (search?: string) => {
 // Lấy chi tiết người dùng
 export const getUserById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/users/${id}`, {
-      headers: getAuthHeader()
-    });
-    
+    const response = await apiClient.get(`/users/${id}`);
+
     return response.data;
   } catch (error) {
     console.error("Error fetching user details:", error);
@@ -61,13 +56,8 @@ export const getUserById = async (id: number) => {
 // Tạo mới người dùng
 export const createUser = async (data: UserFormData) => {
   try {
-    const response = await axios.post(`${API_URL}/users`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
-    
+    const response = await apiClient.post(`/users`, data);
+
     return response.data;
   } catch (error) {
     console.error("Error creating user:", error);
@@ -78,13 +68,8 @@ export const createUser = async (data: UserFormData) => {
 // Cập nhật thông tin người dùng
 export const updateUser = async (id: number, data: UserFormData) => {
   try {
-    const response = await axios.put(`${API_URL}/users/${id}`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
-    
+    const response = await apiClient.put(`/users/${id}`, data);
+
     return response.data;
   } catch (error) {
     console.error("Error updating user:", error);
@@ -95,10 +80,8 @@ export const updateUser = async (id: number, data: UserFormData) => {
 // Xóa người dùng
 export const deleteUser = async (id: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/users/${id}`, {
-      headers: getAuthHeader()
-    });
-    
+    const response = await apiClient.delete(`/users/${id}`);
+
     return response.data;
   } catch (error) {
     console.error("Error deleting user:", error);
@@ -109,10 +92,8 @@ export const deleteUser = async (id: number) => {
 // Lấy danh sách vai trò
 export const getRoles = async () => {
   try {
-    const response = await axios.get(`${API_URL}/roles`, {
-      headers: getAuthHeader()
-    });
-    
+    const response = await apiClient.get(`/roles`);
+
     return response.data;
   } catch (error) {
     console.error("Error fetching roles:", error);

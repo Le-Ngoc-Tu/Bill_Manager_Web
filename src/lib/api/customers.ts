@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 
 // Định nghĩa kiểu dữ liệu
 export interface Customer {
@@ -28,11 +27,9 @@ export const getCustomers = async (search?: string) => {
     if (search) {
       params.append('search', search);
     }
-    
-    const response = await axios.get(`${API_URL}/customers?${params.toString()}`, {
-      headers: getAuthHeader()
-    });
-    
+
+    const response = await apiClient.get(`/customers?${params.toString()}`);
+
     return response.data;
   } catch (error) {
     console.error("Error fetching customers:", error);
@@ -43,10 +40,8 @@ export const getCustomers = async (search?: string) => {
 // Lấy chi tiết khách hàng
 export const getCustomerById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/customers/${id}`, {
-      headers: getAuthHeader()
-    });
-    
+    const response = await apiClient.get(`/customers/${id}`);
+
     return response.data;
   } catch (error) {
     console.error("Error fetching customer details:", error);
@@ -57,13 +52,8 @@ export const getCustomerById = async (id: number) => {
 // Tạo mới khách hàng
 export const createCustomer = async (data: CustomerFormData) => {
   try {
-    const response = await axios.post(`${API_URL}/customers`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
-    
+    const response = await apiClient.post(`/customers`, data);
+
     return response.data;
   } catch (error) {
     console.error("Error creating customer:", error);
@@ -74,13 +64,8 @@ export const createCustomer = async (data: CustomerFormData) => {
 // Cập nhật thông tin khách hàng
 export const updateCustomer = async (id: number, data: CustomerFormData) => {
   try {
-    const response = await axios.put(`${API_URL}/customers/${id}`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
-    
+    const response = await apiClient.put(`/customers/${id}`, data);
+
     return response.data;
   } catch (error) {
     console.error("Error updating customer:", error);
@@ -91,10 +76,8 @@ export const updateCustomer = async (id: number, data: CustomerFormData) => {
 // Xóa khách hàng
 export const deleteCustomer = async (id: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/customers/${id}`, {
-      headers: getAuthHeader()
-    });
-    
+    const response = await apiClient.delete(`/customers/${id}`);
+
     return response.data;
   } catch (error) {
     console.error("Error deleting customer:", error);

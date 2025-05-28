@@ -26,6 +26,7 @@ import {
 // Import API
 import { getInventoryItems, getInventoryItemById, deleteInventoryItem, createInventoryItem, updateInventoryItem } from "@/lib/api"
 import { Inventory } from "@/lib/api/inventory"
+import { formatQuantity, formatCurrency, formatPrice } from "@/lib/utils"
 
 export default function InventoryPage() {
   const isMobile = useIsMobile()
@@ -288,8 +289,8 @@ export default function InventoryPage() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Tất cả</SelectItem>
-                    <SelectItem value="HH">Hàng hóa</SelectItem>
-                    <SelectItem value="CP">Chi phí</SelectItem>
+                    <SelectItem value="HH">HH</SelectItem>
+                    <SelectItem value="CP">CP</SelectItem>
                   </SelectContent>
                 </Select>
               }
@@ -412,13 +413,24 @@ export default function InventoryPage() {
                     </div>
                     <div>
                       <p className="text-base md:text-lg font-medium text-gray-500">Loại</p>
-                      <p className="text-lg md:text-xl">{selectedItem.category === "HH" ? "Hàng hóa" : "Chi phí"}</p>
+                      <p className="text-lg md:text-xl">{selectedItem.category}</p>
                     </div>
                     <div>
-                      <p className="text-base md:text-lg font-medium text-gray-500">Số lượng</p>
-                      <p className="text-lg md:text-xl">{selectedItem.quantity}</p>
+                      <p className="text-base md:text-lg font-medium text-gray-500">
+                        Số lượng
+                      </p>
+                      <p className="text-lg md:text-xl">{formatQuantity(selectedItem.quantity)}</p>
+                      <p className="text-sm text-blue-600 italic mt-1">
+                        Số lượng được tính toán tự động dựa trên các hóa đơn nhập/xuất.
+                      </p>
                     </div>
-                    {/* Phần mô tả đã bị loại bỏ vì không có trong model */}
+                    {/* Hiển thị đơn giá cho hàng hóa loại chi phí */}
+                    {selectedItem.category === "CP" && selectedItem.price !== undefined && (
+                      <div>
+                        <p className="text-base md:text-lg font-medium text-gray-500">Đơn giá</p>
+                        <p className="text-lg md:text-xl">{formatPrice(selectedItem.price || 0)}</p>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}

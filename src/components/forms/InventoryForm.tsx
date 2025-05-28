@@ -73,8 +73,12 @@ export function InventoryForm({ mode, initialData, onSubmit, onCancel }: Invento
           description: `Đã thêm hàng hóa ${values.item_name} vào hệ thống`
         })
       } else {
-        // Cập nhật hàng hóa
-        result = await updateInventoryItem(initialData.id, values)
+        // Cập nhật hàng hóa - giữ nguyên số lượng hiện tại
+        const updatedValues = {
+          ...values,
+          quantity: initialData.quantity // Giữ nguyên số lượng ban đầu
+        }
+        result = await updateInventoryItem(initialData.id, updatedValues)
         toast.success("Cập nhật hàng hóa thành công", {
           description: `Đã cập nhật hàng hóa ${values.item_name}`
         })
@@ -129,8 +133,8 @@ export function InventoryForm({ mode, initialData, onSubmit, onCancel }: Invento
               <SelectValue placeholder="Chọn loại" />
             </SelectTrigger>
             <SelectContent className="text-base md:text-lg">
-              <SelectItem value="HH" className="text-base md:text-lg">Hàng hóa</SelectItem>
-              <SelectItem value="CP" className="text-base md:text-lg">Chi phí</SelectItem>
+              <SelectItem value="HH" className="text-base md:text-lg">HH</SelectItem>
+              <SelectItem value="CP" className="text-base md:text-lg">CP</SelectItem>
             </SelectContent>
           </Select>
           {form.formState.errors.category && (
@@ -139,7 +143,9 @@ export function InventoryForm({ mode, initialData, onSubmit, onCancel }: Invento
         </div>
 
         <div>
-          <Label htmlFor="quantity" className="text-base md:text-lg font-medium mb-3 md:mb-4 block">Số lượng *</Label>
+          <Label htmlFor="quantity" className="text-base md:text-lg font-medium mb-3 md:mb-4 block">
+            Số lượng
+          </Label>
           <Input
             id="quantity"
             type="number"
@@ -147,7 +153,14 @@ export function InventoryForm({ mode, initialData, onSubmit, onCancel }: Invento
             min="0"
             {...form.register("quantity")}
             className="h-12 md:h-14 text-base md:text-lg"
+            disabled={mode === "edit"}
+            readOnly={mode === "edit"}
           />
+          {mode === "edit" && (
+            <p className="text-blue-600 text-sm mt-2 italic">
+              Số lượng hàng hóa được tính toán tự động dựa trên các hóa đơn nhập/xuất.
+            </p>
+          )}
           {form.formState.errors.quantity && (
             <p className="text-red-500 text-sm mt-2">{form.formState.errors.quantity.message}</p>
           )}

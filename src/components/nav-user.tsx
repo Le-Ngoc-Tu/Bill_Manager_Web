@@ -52,48 +52,23 @@ export function NavUser({
   const { logout, user: authUser } = useAuth()
   const router = useRouter()
   const [showAccountDialog, setShowAccountDialog] = useState(false)
-  const [userDetails, setUserDetails] = useState<{
-    username?: string;
-    avatar?: string;
-    fullname?: string;
-    email?: string;
-    role_name?: string;
-    permissions?: string[];
-  }>({})
+  const [cachedUserInfo, setCachedUserInfo] = useState<any>(null)
 
-  // Lấy thông tin chi tiết người dùng khi đăng nhập thành công
+  // Sử dụng useEffect để lấy thông tin người dùng từ localStorage khi component mount
   useEffect(() => {
-    const fetchUserDetails = async () => {
-      if (authUser?.id) {
-        try {
-          const accessToken = localStorage.getItem("accessToken");
-          const response = await fetch(`${process.env.NEXT_PUBLIC_BACKEND_URL}/users/${authUser.id}`, {
-            headers: {
-              Authorization: `Bearer ${accessToken}`
-            }
-          });
-
-          if (response.ok) {
-            const userData = await response.json();
-
-            // Lưu thông tin người dùng vào state
-            setUserDetails({
-              username: userData.username,
-              avatar: userData.avatar,
-              fullname: userData.fullname,
-              email: userData.email,
-              role_name: userData.role_name,
-              permissions: userData.permissions
-            });
-          }
-        } catch (error) {
-          // Xử lý lỗi một cách im lặng
+    // Chỉ lấy từ localStorage nếu authUser không có sẵn
+    if (!authUser?.fullname && !cachedUserInfo) {
+      try {
+        const storedUser = localStorage.getItem("user")
+        if (storedUser) {
+          const parsedUser = JSON.parse(storedUser)
+          setCachedUserInfo(parsedUser)
         }
+      } catch (error) {
+        console.error("Error reading user from localStorage:", error)
       }
-    };
-
-    fetchUserDetails();
-  }, [authUser])
+    }
+  }, [])
 
   const handleLogout = () => {
     logout()
@@ -115,18 +90,28 @@ export function NavUser({
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground py-2 sm:py-3"
               >
                 <Avatar className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg">
-                  <AvatarImage
-                    src={userDetails.avatar ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${userDetails.avatar}` : user.avatar}
-                    alt={userDetails.fullname || user.name}
-                  />
+                  {authUser?.avatar || cachedUserInfo?.avatar ? (
+                    <AvatarImage
+                      src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
+                      alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                      crossOrigin="anonymous"
+                    />
+                  ) : (
+                    <AvatarImage
+                      src={user.avatar}
+                      alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                    />
+                  )}
                   <AvatarFallback className="rounded-lg font-semibold text-sm sm:text-base avatar-gray">
-                    {(userDetails.fullname || user.name).substring(0, 2).toUpperCase()}
+                    {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
                   </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left leading-tight">
-                  <span className="truncate font-medium text-sm sm:text-base">{userDetails.fullname || user.name}</span>
+                  <span className="truncate font-medium text-sm sm:text-base">
+                    {authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                  </span>
                   <span className="text-muted-foreground truncate text-xs sm:text-sm">
-                    {userDetails.email || user.email}
+                    {authUser?.email || cachedUserInfo?.email || user.email}
                   </span>
                 </div>
                 <IconDotsVertical className="ml-auto size-4 sm:size-5" />
@@ -141,18 +126,28 @@ export function NavUser({
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-2 text-left">
                   <Avatar className="h-10 w-10 rounded-lg">
-                    <AvatarImage
-                      src={userDetails.avatar ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${userDetails.avatar}` : user.avatar}
-                      alt={userDetails.fullname || user.name}
-                    />
+                    {authUser?.avatar || cachedUserInfo?.avatar ? (
+                      <AvatarImage
+                        src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
+                        alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                        crossOrigin="anonymous"
+                      />
+                    ) : (
+                      <AvatarImage
+                        src={user.avatar}
+                        alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                      />
+                    )}
                     <AvatarFallback className="rounded-lg font-semibold text-base avatar-gray">
-                      {(userDetails.fullname || user.name).substring(0, 2).toUpperCase()}
+                      {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
                     </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left leading-tight">
-                    <span className="truncate font-medium text-base">{userDetails.fullname || user.name}</span>
+                    <span className="truncate font-medium text-base">
+                      {authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                    </span>
                     <span className="text-muted-foreground truncate text-sm">
-                      {userDetails.email || user.email}
+                      {authUser?.email || cachedUserInfo?.email || user.email}
                     </span>
                   </div>
                 </div>
@@ -192,12 +187,20 @@ export function NavUser({
           <div className="mt-4 flex flex-col space-y-4">
             <div className="flex items-center justify-center mb-4">
               <Avatar className="h-24 w-24 rounded-lg">
-                <AvatarImage
-                  src={userDetails.avatar ? `${process.env.NEXT_PUBLIC_BACKEND_URL}${userDetails.avatar}` : user.avatar}
-                  alt={userDetails.fullname || user.name}
-                />
+                {authUser?.avatar || cachedUserInfo?.avatar ? (
+                  <AvatarImage
+                    src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
+                    alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                    crossOrigin="anonymous"
+                  />
+                ) : (
+                  <AvatarImage
+                    src={user.avatar}
+                    alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                  />
+                )}
                 <AvatarFallback className="rounded-lg text-2xl font-semibold avatar-gray">
-                  {(userDetails.fullname || user.name).substring(0, 2).toUpperCase()}
+                  {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
                 </AvatarFallback>
               </Avatar>
             </div>
@@ -206,7 +209,7 @@ export function NavUser({
               <IconUserCircle className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Tên người dùng</span>
-                <span className="font-medium">{userDetails.username || authUser?.username || user.name}</span>
+                <span className="font-medium">{authUser?.username || cachedUserInfo?.username || user.name}</span>
               </div>
             </div>
 
@@ -214,7 +217,7 @@ export function NavUser({
               <IconUserCircle className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Họ tên</span>
-                <span className="font-medium">{userDetails.fullname || user.name}</span>
+                <span className="font-medium">{authUser?.fullname || cachedUserInfo?.fullname || user.name}</span>
               </div>
             </div>
 
@@ -222,7 +225,7 @@ export function NavUser({
               <IconMail className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Email</span>
-                <span className="font-medium">{userDetails.email || authUser?.email || user.email}</span>
+                <span className="font-medium">{authUser?.email || cachedUserInfo?.email || user.email}</span>
               </div>
             </div>
 
@@ -230,7 +233,7 @@ export function NavUser({
               <IconShield className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Vai trò</span>
-                <span className="font-medium">{userDetails.role_name || authUser?.role_id || "Người dùng"}</span>
+                <span className="font-medium">{authUser?.role_name || cachedUserInfo?.role_name || authUser?.role_id || cachedUserInfo?.role_id || "Người dùng"}</span>
               </div>
             </div>
           </div>

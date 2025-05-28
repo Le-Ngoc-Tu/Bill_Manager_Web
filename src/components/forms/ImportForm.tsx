@@ -1,22 +1,24 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState, useEffect, useRef } from "react"
 import { useForm, Controller, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
 import { toast } from "sonner"
-import { FaPlus, FaTrash, FaPlusCircle, FaEdit } from "react-icons/fa"
+import { FaPlus, FaTrash, FaEdit } from "react-icons/fa"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
-import { Textarea } from "@/components/ui/textarea"
+
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogFooter } from "@/components/ui/dialog"
 import { DatePicker } from "@/components/ui/date-picker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { Combobox } from "@/components/ui/combobox"
-import { formatCurrency } from "@/lib/utils"
+
+import { DropdownPortal } from "@/components/ui/dropdown-portal"
+
+import { formatCurrency, formatPrice, formatCurrencyInput } from "@/lib/utils"
 import {
   Pagination,
   PaginationContent,
@@ -31,8 +33,10 @@ import {
 import type { Supplier } from "@/lib/api/suppliers"
 import type { Inventory } from "@/lib/api/inventory"
 import { createSupplier, getSuppliers } from "@/lib/api/suppliers"
-import { createInventoryItem, getInventoryItems } from "@/lib/api/inventory"
-import { addImportDetail, updateImportDetail, deleteImportDetail } from "@/lib/api/imports"
+import { getInventoryItems } from "@/lib/api/inventory"
+import { addImportDetail, updateImportDetail, deleteImportDetail, updateImport } from "@/lib/api/imports"
+import { uploadPdfToOcr, convertOcrResultToImportDetails, getOriginalOcrResult, getOcrTaskResult } from "@/lib/api/ocr"
+import OcrResultViewer from "@/components/ocr/OcrResultViewer"
 
 // Định nghĩa Zod schema để validation
 const importDetailSchema = z.object({
@@ -48,9 +52,13 @@ const importDetailSchema = z.object({
   seller_name: z.string().optional(),
   seller_tax_code: z.string().optional(),
   // Thêm các trường tính toán
-  total_before_tax: z.number().optional(),
-  tax_amount: z.number().optional(),
-  total_after_tax: z.number().optional(),
+  total_before_tax: z.coerce.number().min(0, "Tổng tiền trước thuế không được âm").optional(),
+  tax_amount: z.coerce.number().min(0, "Thuế không được âm").optional(),
+  total_after_tax: z.coerce.number().min(0, "Tổng tiền sau thuế không được âm").optional(),
+  // Thêm cờ để đánh dấu người dùng đã tự chỉnh sửa
+  is_manually_edited: z.boolean().optional().default(false),
+  // Thêm trường lưu ID kết quả OCR
+  ocrTaskId: z.string().optional(),
 })
 
 const importFormSchema = z.object({
@@ -61,6 +69,12 @@ const importFormSchema = z.object({
   description: z.string().optional(),
   note: z.string().optional(),
   details: z.array(importDetailSchema).min(1, "Phải có ít nhất một mặt hàng"),
+  // Thêm cờ để đánh dấu người dùng đã tự chỉnh sửa các trường tổng tiền
+  is_invoice_totals_manually_edited: z.boolean().optional().default(false),
+  // Các trường tổng tiền của hóa đơn
+  total_before_tax: z.number().optional(),
+  total_tax: z.number().optional(),
+  total_after_tax: z.number().optional(),
 })
 
 const supplierFormSchema = z.object({
@@ -102,8 +116,6 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
   // State cho modal thêm mới
   const [isSupplierModalOpen, setIsSupplierModalOpen] = useState(false)
-  const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
-  const [currentDetailIndex, setCurrentDetailIndex] = useState<number | null>(null)
 
   // State để theo dõi hàng đang được chỉnh sửa
   const [editingRowIndex, setEditingRowIndex] = useState<number | null>(null)
@@ -113,6 +125,275 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   // State để lưu trữ danh sách các chi tiết đã đánh dấu xóa
   const [deletedDetails, setDeletedDetails] = useState<any[]>([])
   const itemsPerPage = 7
+
+  // State cho việc tải lên tập tin PDF
+  const [isPdfUploading, setIsPdfUploading] = useState(false)
+  const [pdfUploadProgress, setPdfUploadProgress] = useState(0)
+  const [isOcrModalOpen, setIsOcrModalOpen] = useState(false)
+
+  // State cho thông tin người bán mặc định
+  const [defaultSupplierId, setDefaultSupplierId] = useState<number | null>(null)
+  const [defaultSellerName, setDefaultSellerName] = useState<string>("")
+  const [defaultSellerTaxCode, setDefaultSellerTaxCode] = useState<string>("")
+  const [showSellerDropdown, setShowSellerDropdown] = useState<boolean>(false)
+  const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([])
+
+  // Refs cho các input
+  const inputRefs = useRef<(HTMLInputElement | null)[]>([])
+  const sellerInputRef = useRef<HTMLInputElement>(null)
+
+  // State để quản lý giá trị hiển thị của các ô tổng tiền
+  const [totalBeforeTaxDisplay, setTotalBeforeTaxDisplay] = useState("")
+  const [totalTaxDisplay, setTotalTaxDisplay] = useState("")
+  const [totalAfterTaxDisplay, setTotalAfterTaxDisplay] = useState("")
+
+  // State cho manual calculation
+  const [isCalculating, setIsCalculating] = useState(false)
+
+  // Hàm đóng dropdown
+  const closeDropdown = () => {
+    // Đóng dropdown
+  }
+
+  // Hàm định dạng hiển thị đơn giá thông minh
+  const formatPriceDisplay = (value: number): string => {
+    if (value === 0) return "";
+
+    if (Number.isInteger(value)) {
+      // Số nguyên: hiển thị không có phần thập phân
+      return value.toString();
+    } else {
+      // Số thập phân: hiển thị với dấu phẩy và loại bỏ số 0 thừa
+      const parts = value.toString().split('.');
+      const integerPart = parts[0];
+      let decimalPart = parts[1] || '';
+
+      // Cắt bớt nếu có nhiều hơn 3 chữ số thập phân
+      if (decimalPart.length > 3) {
+        decimalPart = decimalPart.substring(0, 3);
+      }
+
+      // Loại bỏ số 0 thừa ở cuối phần thập phân
+      decimalPart = decimalPart.replace(/0+$/, '');
+
+      // Nếu không còn phần thập phân, hiển thị như số nguyên
+      if (decimalPart === '') {
+        return integerPart;
+      } else {
+        return integerPart + ',' + decimalPart;
+      }
+    }
+  }
+
+  // Utility functions cho định dạng số Việt Nam
+  const formatVietnameseNumber = (value: number | string): string => {
+    if (!value && value !== 0) return "";
+
+    const numValue = typeof value === 'string' ? parseFloat(value) : value;
+    if (isNaN(numValue) || numValue === 0) return "";
+
+    // Tách phần nguyên và phần thập phân
+    const parts = numValue.toString().split('.');
+    let integerPart = parts[0];
+    let decimalPart = parts[1] || '';
+
+    // Thêm dấu chấm phân cách hàng nghìn cho phần nguyên
+    integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+
+    // Xử lý phần thập phân (tối đa 3 chữ số)
+    if (decimalPart) {
+      decimalPart = decimalPart.substring(0, 3);
+      // Loại bỏ số 0 thừa ở cuối
+      decimalPart = decimalPart.replace(/0+$/, '');
+
+      if (decimalPart) {
+        return integerPart + ',' + decimalPart;
+      }
+    }
+
+    return integerPart;
+  }
+
+  const parseVietnameseNumber = (value: string): number => {
+    if (!value || value.trim() === '') return 0;
+
+    // Loại bỏ dấu chấm phân cách hàng nghìn và thay dấu phẩy thành dấu chấm
+    const cleanValue = value
+      .replace(/\./g, '') // Loại bỏ dấu chấm phân cách hàng nghìn
+      .replace(',', '.'); // Thay dấu phẩy thành dấu chấm cho phần thập phân
+
+    const numValue = parseFloat(cleanValue);
+    return isNaN(numValue) ? 0 : numValue;
+  }
+
+  // Function để parse số nguyên (chỉ loại bỏ dấu chấm phân cách hàng nghìn)
+  const parseIntegerNumber = (value: string): number => {
+    if (!value || value.trim() === '') return 0;
+
+    // Chỉ loại bỏ dấu chấm phân cách hàng nghìn (không có dấu phẩy)
+    const cleanValue = value.replace(/\./g, '');
+
+    const numValue = parseInt(cleanValue, 10);
+    return isNaN(numValue) ? 0 : numValue;
+  }
+
+  // Function để format input khi đang nhập (real-time) - cho phép thập phân
+  const formatInputWhileTyping = (value: string, maxDecimals: number = 3): string => {
+    // Chỉ cho phép số, dấu chấm và dấu phẩy
+    value = value.replace(/[^0-9.,]/g, '');
+
+    // Đảm bảo chỉ có một dấu phẩy
+    const commaCount = (value.match(/,/g) || []).length;
+    if (commaCount > 1) {
+      const parts = value.split(',');
+      value = parts[0] + ',' + parts.slice(1).join('');
+    }
+
+    // Giới hạn số chữ số thập phân
+    if (value.includes(',')) {
+      const parts = value.split(',');
+      if (parts[1] && parts[1].length > maxDecimals) {
+        parts[1] = parts[1].substring(0, maxDecimals);
+        value = parts[0] + ',' + parts[1];
+      }
+    }
+
+    // Tách phần nguyên và phần thập phân
+    const parts = value.split(',');
+    let integerPart = parts[0];
+    const decimalPart = parts[1];
+
+    // Loại bỏ dấu chấm cũ để tránh conflict
+    integerPart = integerPart.replace(/\./g, '');
+
+    // Thêm dấu chấm phân cách hàng nghìn cho phần nguyên
+    if (integerPart.length > 3) {
+      integerPart = integerPart.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    // Ghép lại với phần thập phân nếu có
+    if (decimalPart !== undefined) {
+      return integerPart + ',' + decimalPart;
+    }
+
+    return integerPart;
+  }
+
+  // Function để format input chỉ cho số nguyên (không cho phép dấu phẩy)
+  const formatInputWhileTypingInteger = (value: string): string => {
+    // Chỉ cho phép số và dấu chấm (loại bỏ dấu phẩy)
+    value = value.replace(/[^0-9.]/g, '');
+
+    // Loại bỏ dấu chấm cũ để tránh conflict
+    value = value.replace(/\./g, '');
+
+    // Thêm dấu chấm phân cách hàng nghìn
+    if (value.length > 3) {
+      value = value.replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+    }
+
+    return value;
+  }
+
+  const handleVietnameseNumberInput = (
+    e: React.ChangeEvent<HTMLInputElement>,
+    setValue: (value: number) => void,
+    maxDecimals: number = 3
+  ) => {
+    const rawValue = e.target.value;
+
+    // Format value khi đang nhập
+    const formattedValue = formatInputWhileTyping(rawValue, maxDecimals);
+
+    // Cập nhật display value
+    e.target.value = formattedValue;
+
+    // Parse và set giá trị số
+    const numValue = parseVietnameseNumber(formattedValue);
+    setValue(numValue);
+  }
+
+  // Hàm định dạng tiền tệ cho input (hiển thị với định dạng Việt Nam)
+  const formatCurrencyInput = (value: number): string => {
+    if (value === 0) return "";
+
+    // Làm tròn thành số nguyên
+    const roundedValue = Math.round(value);
+
+    // Sử dụng formatVietnameseNumber để định dạng theo chuẩn Việt Nam
+    return formatVietnameseNumber(roundedValue);
+  }
+
+  // Hàm kiểm tra có nên thực hiện phân bổ tỷ lệ hay không
+  const shouldDistributeAmounts = () => {
+    // Không phân bổ nếu đang ở chế độ chỉnh sửa và có dữ liệu từ PDF extraction
+    if (mode === "edit" && initialData) {
+      // Kiểm tra xem có dữ liệu từ PDF extraction không
+      // Thường thì dữ liệu từ PDF sẽ có nhiều chi tiết với giá trị cụ thể
+      const hasDetailedData = initialData.details &&
+                              initialData.details.length > 0 &&
+                              initialData.details.some((detail: any) =>
+                                detail.price_before_tax &&
+                                detail.quantity &&
+                                detail.total_before_tax
+                              );
+
+      if (hasDetailedData) {
+        console.log('Skipping amount distribution - editing invoice with PDF data');
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Hàm phân bổ tổng tiền chính xác để tránh sai lệch làm tròn
+  const distributeAmountAccurately = (totalAmount: number, details: any[], fieldName: string) => {
+    if (details.length === 0) return [];
+
+    // Tính tổng hiện tại của các chi tiết
+    const currentTotal = details.reduce((sum, detail) => sum + (Number(detail[fieldName]) || 0), 0);
+
+    if (currentTotal === 0) {
+      // Nếu tổng hiện tại là 0, phân bổ đều
+      const amountPerDetail = Math.floor(totalAmount / details.length);
+      const remainder = totalAmount - (amountPerDetail * details.length);
+
+      return details.map((_, index) =>
+        index < remainder ? amountPerDetail + 1 : amountPerDetail
+      );
+    }
+
+    // Tính tỷ lệ cho từng chi tiết
+    const ratios = details.map(detail => (Number(detail[fieldName]) || 0) / currentTotal);
+
+    // Phân bổ theo tỷ lệ và làm tròn
+    const distributedAmounts = ratios.map(ratio => Math.round(totalAmount * ratio));
+
+    // Tính tổng sau khi làm tròn
+    const roundedTotal = distributedAmounts.reduce((sum, amount) => sum + amount, 0);
+
+    // Điều chỉnh sai lệch do làm tròn
+    const difference = totalAmount - roundedTotal;
+
+    if (difference !== 0) {
+      // Tìm chi tiết có giá trị lớn nhất để điều chỉnh
+      let maxIndex = 0;
+      let maxValue = distributedAmounts[0];
+
+      for (let i = 1; i < distributedAmounts.length; i++) {
+        if (distributedAmounts[i] > maxValue) {
+          maxValue = distributedAmounts[i];
+          maxIndex = i;
+        }
+      }
+
+      // Điều chỉnh chi tiết có giá trị lớn nhất
+      distributedAmounts[maxIndex] += difference;
+    }
+
+    return distributedAmounts;
+  }
 
   // Tham chiếu cho combobox - hiện tại không sử dụng nhưng giữ lại cho tương thích trong tương lai
 
@@ -130,23 +411,14 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
   })
 
-  const inventoryForm = useForm<InventoryFormValues>({
-    resolver: zodResolver(inventoryFormSchema),
-    mode: "onSubmit", // Chỉ validate khi submit form
-    reValidateMode: "onSubmit", // Chỉ validate lại khi submit form
-    defaultValues: {
-      item_name: "",
-      unit: "",
-      quantity: 0,
-      category: "HH",
-    }
-  })
+
 
   // Form setup với react-hook-form và zod validation
   const form = useForm<ImportFormValues>({
     resolver: zodResolver(importFormSchema) as any,
     mode: "onSubmit", // Chỉ validate khi submit form
     reValidateMode: "onSubmit", // Chỉ validate lại khi submit form
+    shouldFocusError: false, // Không tự động focus vào trường lỗi
     defaultValues: initialData
       ? {
           ...initialData,
@@ -156,7 +428,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
             return {
               ...d,
               quantity: Number(d.quantity) || 0,
-              price_before_tax: Number(d.price_before_tax) || 0,
+              // Làm tròn đơn giá đến 3 chữ số thập phân
+              price_before_tax: Math.round((Number(d.price_before_tax) || 0) * 1000) / 1000,
               tax_rate: d.tax_rate || "0%", // Đảm bảo tax_rate luôn có giá trị
             };
           }) || [],
@@ -176,11 +449,18 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
               tax_rate: "0%",
               supplier_id: null,
               inventory_id: null,
-              total_before_tax: 0,
-              tax_amount: 0,
-              total_after_tax: 0,
+              total_before_tax: undefined,
+              tax_amount: undefined,
+              total_after_tax: undefined,
+              is_manually_edited: false,
+              ocrTaskId: "",
             },
           ],
+          // Thêm các trường tổng tiền của hóa đơn
+          total_before_tax: undefined,
+          total_tax: undefined,
+          total_after_tax: undefined,
+          is_invoice_totals_manually_edited: false,
         },
   })
 
@@ -200,12 +480,12 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     setIsSubmitted(false);
   }, [form.formState.isSubmitSuccessful]);
 
-  // Tính toán tổng tiền cho tất cả các dòng khi form được tải
-  useEffect(() => {
-    fields.forEach((_, index) => {
-      calculateDetailTotals(index)
-    })
-  }, [fields.length])
+  // Không tự động tính toán khi form được tải - chỉ khi user nhấn nút tính toán
+  // useEffect(() => {
+  //   fields.forEach((_, index) => {
+  //     calculateDetailTotals(index)
+  //   })
+  // }, [fields.length])
 
   // Xử lý chuyển trang
   const handlePageChange = (pageNumber: number) => {
@@ -224,6 +504,75 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   useEffect(() => {
     setIsSubmitted(false);
   }, []);
+
+  // Thiết lập thông tin người bán mặc định từ dữ liệu ban đầu
+  useEffect(() => {
+    if (initialData && initialData.details && initialData.details.length > 0) {
+      const firstDetail = initialData.details[0];
+      if (firstDetail.seller_name) {
+        setDefaultSellerName(firstDetail.seller_name);
+        setDefaultSellerTaxCode(firstDetail.seller_tax_code || "");
+        setDefaultSupplierId(firstDetail.supplier_id || null);
+        setShowSellerDropdown(true);
+      }
+    }
+  }, [initialData]);
+
+  // Khởi tạo giá trị hiển thị ban đầu
+  useEffect(() => {
+    const details = form.getValues("details") || [];
+
+    const totalBeforeTax = initialData && initialData.total_before_tax
+      ? initialData.total_before_tax
+      : details.reduce((sum, detail) => sum + (Number(detail?.total_before_tax || 0)), 0);
+
+    const totalTax = initialData && initialData.total_tax
+      ? initialData.total_tax
+      : details.reduce((sum, detail) => sum + (Number(detail?.tax_amount || 0)), 0);
+
+    const totalAfterTax = initialData && initialData.total_after_tax
+      ? initialData.total_after_tax
+      : details.reduce((sum, detail) => sum + (Number(detail?.total_after_tax || 0)), 0);
+
+    console.log('Initial display values setup:', {
+      initialData_total_tax: initialData?.total_tax,
+      calculated_total_tax: totalTax,
+      display_value: formatCurrencyInput(totalTax)
+    });
+
+    // Chỉ hiển thị giá trị nếu có dữ liệu thực tế, không hiển thị "0"
+    setTotalBeforeTaxDisplay(totalBeforeTax > 0 ? formatCurrencyInput(totalBeforeTax) : "");
+    setTotalTaxDisplay(totalTax > 0 ? formatCurrencyInput(totalTax) : "");
+    setTotalAfterTaxDisplay(totalAfterTax > 0 ? formatCurrencyInput(totalAfterTax) : "");
+  }, [initialData]);
+
+  // Cập nhật state hiển thị khi initialData thay đổi (sau khi lưu thành công)
+  useEffect(() => {
+    if (initialData) {
+      console.log('Updating display values after data change:', {
+        total_before_tax: initialData.total_before_tax,
+        total_tax: initialData.total_tax,
+        total_after_tax: initialData.total_after_tax
+      });
+
+      // Cập nhật state hiển thị với dữ liệu mới từ API
+      if (initialData.total_before_tax !== undefined) {
+        setTotalBeforeTaxDisplay(formatCurrencyInput(initialData.total_before_tax));
+      }
+      if (initialData.total_tax !== undefined) {
+        setTotalTaxDisplay(formatCurrencyInput(initialData.total_tax));
+      }
+      if (initialData.total_after_tax !== undefined) {
+        setTotalAfterTaxDisplay(formatCurrencyInput(initialData.total_after_tax));
+      }
+
+      // Reset flag chỉnh sửa thủ công để cho phép cập nhật từ dữ liệu mới
+      form.setValue("is_invoice_totals_manually_edited", false);
+    }
+  }, [initialData?.total_before_tax, initialData?.total_tax, initialData?.total_after_tax, initialData?.updatedAt]);
+
+  // Đã loại bỏ useEffect auto-calculation để tránh tự động cập nhật invoice totals
+  // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả" hoặc OCR extract
 
   // Fetch suppliers và inventory items từ API
   useEffect(() => {
@@ -266,12 +615,296 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
   }
 
+  // Hàm xử lý tải lên tập tin PDF
+  const handlePdfUpload = async (file: File) => {
+    if (!file || file.type !== "application/pdf") {
+      toast.error("Vui lòng chọn tập tin PDF hợp lệ", {
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      });
+      return;
+    }
+
+    try {
+      setIsPdfUploading(true);
+      setPdfUploadProgress(10);
+
+      // Upload file lên OCR API
+      const response = await uploadPdfToOcr(file);
+
+      if (response && response.task_id) {
+        setPdfUploadProgress(30);
+
+        // Tạo một EventSource để lắng nghe tiến trình xử lý OCR
+        const eventSourceUrl = `${process.env.NEXT_PUBLIC_OCR_API_URL || "http://localhost:7011"}/tasks/${response.task_id}/progress`;
+        console.log("Connecting to EventSource:", eventSourceUrl);
+        const eventSource = new EventSource(eventSourceUrl);
+
+        eventSource.onmessage = async (event) => {
+          const data = JSON.parse(event.data);
+
+          // Cập nhật tiến trình
+          setPdfUploadProgress(Math.min(30 + (data.progress * 0.7), 95));
+
+          // Nếu đã hoàn thành, lấy kết quả và đóng kết nối
+          if (data.status === "completed" && data.result) {
+            eventSource.close();
+
+            // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
+            const details = convertOcrResultToImportDetails(data.result);
+
+            // Thêm các chi tiết vào form
+            if (details && details.length > 0) {
+              // Xóa dòng mặc định nếu chưa có dữ liệu
+              if (fields.length === 1 && !form.getValues("details.0.item_name")) {
+                remove(0);
+              }
+
+              // Trích xuất thông tin người bán từ dòng đầu tiên (nếu có)
+              if (details[0].seller_name) {
+                // Thiết lập thông tin người bán mặc định
+                setDefaultSellerName(details[0].seller_name);
+                setDefaultSellerTaxCode(details[0].seller_tax_code || "");
+
+                // Tìm kiếm người bán đã tồn tại
+                let matchedSupplier = null;
+                if (details[0].seller_tax_code) {
+                  matchedSupplier = suppliers.find(
+                    supplier =>
+                      supplier.name.toLowerCase() === details[0].seller_name.toLowerCase() &&
+                      supplier.tax_code === details[0].seller_tax_code
+                  );
+                }
+
+                if (!matchedSupplier) {
+                  matchedSupplier = suppliers.find(
+                    supplier => supplier.name.toLowerCase() === details[0].seller_name.toLowerCase()
+                  );
+                }
+
+                if (matchedSupplier) {
+                  setDefaultSupplierId(matchedSupplier.id);
+                } else {
+                  setDefaultSupplierId(null);
+                }
+              }
+
+              // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa đã tồn tại
+              details.forEach(detail => {
+                // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
+                let matchedInventory = null;
+                if (detail.item_name) {
+                  matchedInventory = inventoryItems.find(
+                    item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+                  );
+
+                  if (matchedInventory) {
+                    console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+                    // Cập nhật thông tin hàng hóa
+                    detail.inventory_id = matchedInventory.id;
+                    detail.unit = detail.unit || matchedInventory.unit;
+                    detail.category = matchedInventory.category as "HH" | "CP";
+                  }
+                }
+
+                // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
+                let matchedSupplier = null;
+                if (detail.seller_name) {
+                  // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
+                  if (detail.seller_tax_code) {
+                    matchedSupplier = suppliers.find(
+                      supplier =>
+                        supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
+                        supplier.tax_code === detail.seller_tax_code
+                    );
+                  }
+
+                  // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
+                  if (!matchedSupplier) {
+                    matchedSupplier = suppliers.find(
+                      supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
+                    );
+                  }
+
+                  if (matchedSupplier) {
+                    console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
+                    // Cập nhật thông tin người bán
+                    detail.supplier_id = matchedSupplier.id;
+                    detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
+                  }
+                }
+
+                append({
+                  ...detail,
+                  category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
+                  is_manually_edited: false,
+                });
+              });
+
+              // Tự động tính toán invoice totals sau OCR extract
+              setTimeout(() => {
+                handleOcrAutoCalculation(details.length);
+              }, 100);
+
+              // Toast message đã được hiển thị trong setTimeout ở trên
+            } else {
+              toast.warning("Không tìm thấy dữ liệu hàng hóa", {
+                description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
+              });
+            }
+
+            setPdfUploadProgress(100);
+            setIsPdfUploading(false);
+            setIsOcrModalOpen(false);
+          }
+        };
+
+        // Xử lý sự kiện khi kết nối được mở
+        eventSource.onopen = () => {
+          console.log("EventSource connection opened successfully");
+        };
+
+        // Xử lý sự kiện lỗi
+        eventSource.onerror = (error) => {
+          console.error("EventSource error:", error);
+
+          // Đóng kết nối
+          eventSource.close();
+          setIsPdfUploading(false);
+
+          // Thử lấy kết quả trực tiếp nếu EventSource gặp lỗi
+          getOcrTaskResult(response.task_id)
+            .then((result: any) => {
+              if (result) {
+                console.log("Retrieved OCR result directly:", result);
+                // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
+                const details = convertOcrResultToImportDetails(result);
+
+                // Xử lý kết quả tương tự như trong onmessage
+                if (details && details.length > 0) {
+                  // Xóa dòng mặc định nếu chưa có dữ liệu
+                  if (fields.length === 1 && !form.getValues("details.0.item_name")) {
+                    remove(0);
+                  }
+
+                  // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa và người bán đã tồn tại
+                  details.forEach(detail => {
+                    // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
+                    let matchedInventory = null;
+                    if (detail.item_name) {
+                      matchedInventory = inventoryItems.find(
+                        item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+                      );
+
+                      if (matchedInventory) {
+                        console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+                        // Cập nhật thông tin hàng hóa
+                        detail.inventory_id = matchedInventory.id;
+                        detail.unit = detail.unit || matchedInventory.unit;
+                        detail.category = matchedInventory.category as "HH" | "CP";
+                      }
+                    }
+
+                    // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
+                    let matchedSupplier = null;
+                    if (detail.seller_name) {
+                      // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
+                      if (detail.seller_tax_code) {
+                        matchedSupplier = suppliers.find(
+                          supplier =>
+                            supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
+                            supplier.tax_code === detail.seller_tax_code
+                        );
+                      }
+
+                      // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
+                      if (!matchedSupplier) {
+                        matchedSupplier = suppliers.find(
+                          supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
+                        );
+                      }
+
+                      if (matchedSupplier) {
+                        console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
+                        // Cập nhật thông tin người bán
+                        detail.supplier_id = matchedSupplier.id;
+                        detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
+                      }
+                    }
+
+                    append({
+                      ...detail,
+                      category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
+                      is_manually_edited: false,
+                    });
+                  });
+
+                  // Tự động tính toán invoice totals sau OCR extract (fallback)
+                  setTimeout(() => {
+                    handleOcrAutoCalculation(details.length);
+                  }, 100);
+                } else {
+                  toast.warning("Không tìm thấy dữ liệu hàng hóa", {
+                    description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
+                  });
+                }
+
+                setPdfUploadProgress(100);
+                setIsPdfUploading(false);
+                setIsOcrModalOpen(false);
+              } else {
+                toast.error("Lỗi khi xử lý tập tin PDF", {
+                  description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
+                  className: "text-lg font-medium",
+                  descriptionClassName: "text-base"
+                });
+              }
+            })
+            .catch((err: Error) => {
+              console.error("Error getting OCR result directly:", err);
+              toast.error("Lỗi khi xử lý tập tin PDF", {
+                description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
+                className: "text-lg font-medium",
+                descriptionClassName: "text-base"
+              });
+            });
+        };
+      } else {
+        setIsPdfUploading(false);
+        toast.error("Lỗi khi tải lên tập tin PDF", {
+          description: "Không thể tải lên tập tin PDF. Vui lòng thử lại sau.",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
+      }
+    } catch (error) {
+      console.error("Error uploading PDF:", error);
+      setIsPdfUploading(false);
+      toast.error("Lỗi khi tải lên tập tin PDF", {
+        description: "Đã xảy ra lỗi khi tải lên tập tin PDF. Vui lòng thử lại sau.",
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      });
+    }
+  }
+
   // Tính toán tổng tiền cho từng dòng
-  const calculateDetailTotals = (index: number) => {
+  const calculateDetailTotals = (index: number, forceCalculation = false) => {
     const details = form.getValues("details")
     const detail = details[index]
 
     if (!detail) return
+
+    // Kiểm tra xem người dùng đã tự chỉnh sửa giá trị chưa
+    // Nếu đã chỉnh sửa thủ công, giữ nguyên giá trị và không tính toán lại
+    // TRỪ KHI forceCalculation = true
+    if (detail.is_manually_edited && !forceCalculation) {
+      return;
+    }
 
     // Chuyển đổi giá trị sang số (hỗ trợ cả chuỗi và số)
     let quantity = 0;
@@ -302,140 +935,181 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       } else {
         priceBeforeTax = Number(priceValue) || 0;
       }
+
+      // Làm tròn đơn giá đến 3 chữ số thập phân
+      priceBeforeTax = Math.round(priceBeforeTax * 1000) / 1000;
     }
 
     // Xử lý trường hợp KCT (Không chịu thuế)
     let taxRate = 0
     if (detail.tax_rate !== "KCT") {
-      taxRate = Number(detail.tax_rate?.replace("%", "")) || 0
+      taxRate = Number(detail.tax_rate?.replace("%", "") || 0)
     }
 
-    const totalBeforeTax = quantity * priceBeforeTax
-    const taxAmount = (totalBeforeTax * taxRate) / 100
+    // Tính tổng tiền trước thuế và làm tròn thành số nguyên (giống backend)
+    const totalBeforeTax = Math.round(quantity * priceBeforeTax)
+    // Tính thuế dựa trên tổng tiền trước thuế đã làm tròn (giống backend)
+    const taxAmount = Math.round((totalBeforeTax * taxRate) / 100)
+    // Tính tổng tiền sau thuế bằng cách cộng tổng tiền trước thuế đã làm tròn và thuế đã làm tròn
     const totalAfterTax = totalBeforeTax + taxAmount
 
-    // Update the calculated fields - làm tròn đến 3 chữ số thập phân khi hiển thị
-    form.setValue(`details.${index}.total_before_tax`, roundToThreeDecimals(totalBeforeTax))
-    form.setValue(`details.${index}.tax_amount`, roundToThreeDecimals(taxAmount))
-    form.setValue(`details.${index}.total_after_tax`, roundToThreeDecimals(totalAfterTax))
+    // Update the calculated fields - đã làm tròn ở các bước trước
+    form.setValue(`details.${index}.total_before_tax`, totalBeforeTax)
+    form.setValue(`details.${index}.tax_amount`, taxAmount)
+    form.setValue(`details.${index}.total_after_tax`, totalAfterTax)
 
     // Force re-render to update displayed values
     form.trigger(`details.${index}`)
+
+    // Không tự động cập nhật tổng tiền hóa đơn - chỉ khi manual calculation
+  }
+
+  // Hàm cập nhật tổng tiền của toàn bộ hóa đơn
+  const updateInvoiceTotals = () => {
+    const details = form.getValues("details")
+
+    // Tính tổng tiền trước thuế, tổng thuế và tổng thanh toán
+    let totalBeforeTax = 0
+    let totalTax = 0
+    let totalAfterTax = 0
+
+    details.forEach(detail => {
+      totalBeforeTax += Number(detail.total_before_tax || 0)
+      totalTax += Number(detail.tax_amount || 0)
+      totalAfterTax += Number(detail.total_after_tax || 0)
+    })
+
+    // Cập nhật state để hiển thị trong UI
+    form.setValue("total_before_tax", totalBeforeTax)
+    form.setValue("total_tax", totalTax)
+    form.setValue("total_after_tax", totalAfterTax)
+  }
+
+  // Helper function cho auto-calculation sau OCR extract
+  const handleOcrAutoCalculation = (extractedItemsCount: number) => {
+    // Cập nhật tổng tiền invoice từ item details đã có
+    updateInvoiceTotals();
+
+    // Cập nhật display values
+    const allDetails = form.getValues("details");
+    const newTotalBeforeTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_before_tax) || 0), 0);
+    const newTotalTax = allDetails.reduce((sum, detail) => sum + (Number(detail.tax_amount) || 0), 0);
+    const newTotalAfterTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_after_tax) || 0), 0);
+
+    setTotalBeforeTaxDisplay(formatCurrencyInput(newTotalBeforeTax));
+    setTotalTaxDisplay(formatCurrencyInput(newTotalTax));
+    setTotalAfterTaxDisplay(formatCurrencyInput(newTotalAfterTax));
+
+    // Kích hoạt cập nhật UI cho toàn bộ form
+    form.trigger();
+
+    // Hiển thị thông báo thành công với thông tin tổng tiền
+    toast.success("Trích xuất và tính toán hoàn thành", {
+      description: `Đã trích xuất ${extractedItemsCount} mặt hàng và tính toán tổng tiền tự động`,
+      className: "text-lg font-medium",
+      descriptionClassName: "text-base"
+    });
+  }
+
+  // Hàm tính toán thủ công cho tất cả items - Force recalculation
+  const handleManualCalculation = async () => {
+    setIsCalculating(true)
+
+    try {
+      const details = form.getValues("details")
+
+      // BƯỚC 1: Reset tất cả manual edit flags trước khi tính toán
+      details.forEach((_, index) => {
+        form.setValue(`details.${index}.is_manually_edited`, false)
+      })
+
+      // Reset invoice level manual edit flag
+      form.setValue("is_invoice_totals_manually_edited", false)
+
+      // BƯỚC 2: Force tính toán lại tất cả items sử dụng calculateDetailTotals với forceCalculation = true
+      console.log("Starting force recalculation for", details.length, "items")
+      details.forEach((_, index) => {
+        const beforeCalc = form.getValues(`details.${index}`)
+        console.log(`Before calc item ${index}:`, {
+          quantity: beforeCalc.quantity,
+          price_before_tax: beforeCalc.price_before_tax,
+          total_before_tax: beforeCalc.total_before_tax,
+          is_manually_edited: beforeCalc.is_manually_edited
+        })
+
+        calculateDetailTotals(index, true) // Force calculation bỏ qua manual edit check
+
+        const afterCalc = form.getValues(`details.${index}`)
+        console.log(`After calc item ${index}:`, {
+          quantity: afterCalc.quantity,
+          price_before_tax: afterCalc.price_before_tax,
+          total_before_tax: afterCalc.total_before_tax,
+          is_manually_edited: afterCalc.is_manually_edited
+        })
+      })
+
+      // BƯỚC 3: Cập nhật tổng tiền invoice
+      updateInvoiceTotals()
+
+      // BƯỚC 4: Cập nhật display values
+      const allDetails = form.getValues("details")
+      const newTotalBeforeTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_before_tax) || 0), 0)
+      const newTotalTax = allDetails.reduce((sum, detail) => sum + (Number(detail.tax_amount) || 0), 0)
+      const newTotalAfterTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_after_tax) || 0), 0)
+
+      setTotalBeforeTaxDisplay(formatCurrencyInput(newTotalBeforeTax))
+      setTotalTaxDisplay(formatCurrencyInput(newTotalTax))
+      setTotalAfterTaxDisplay(formatCurrencyInput(newTotalAfterTax))
+
+      // BƯỚC 5: Force re-render toàn bộ form để cập nhật UI
+      // Trigger re-render cho từng field để đảm bảo UI sync
+      details.forEach((_, index) => {
+        form.trigger(`details.${index}.total_before_tax`)
+        form.trigger(`details.${index}.tax_amount`)
+        form.trigger(`details.${index}.total_after_tax`)
+        form.trigger(`details.${index}.is_manually_edited`)
+      })
+
+      // Trigger re-render cho invoice totals
+      form.trigger("total_before_tax")
+      form.trigger("total_tax")
+      form.trigger("total_after_tax")
+      form.trigger("is_invoice_totals_manually_edited")
+
+      // Force re-render toàn bộ form
+      form.trigger()
+
+      // Đảm bảo UI được cập nhật hoàn toàn
+      setTimeout(() => {
+        // Final trigger để đảm bảo tất cả input fields được sync
+        details.forEach((_, index) => {
+          form.trigger(`details.${index}`)
+        })
+        form.trigger()
+      }, 50)
+
+      // Hiển thị thông báo thành công
+      toast.success("Tính toán hoàn thành", {
+        description: `Đã tính toán lại tất cả ${details.length} mặt hàng từ số lượng và đơn giá`,
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      })
+
+    } catch (error) {
+      console.error("Error in manual calculation:", error)
+      toast.error("Lỗi tính toán", {
+        description: "Đã xảy ra lỗi khi tính toán. Vui lòng thử lại.",
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base"
+      })
+    } finally {
+      setIsCalculating(false)
+    }
   }
 
   // Hàm này không còn sử dụng, thay thế bằng handleInventoryChange
 
-  // Hàm này không còn sử dụng, thay thế bằng handleSupplierChange
 
-  // Xử lý khi người dùng nhập hoặc chọn hàng hóa
-  const handleInventoryChange = (value: string, index: number) => {
-    console.log(`handleInventoryChange called with value:`, value, 'for index:', index);
-
-    // Kiểm tra xem giá trị có phải là ID của hàng hóa hiện có không
-    const matchedItem = inventoryItems.find(item => item.id.toString() === value)
-
-    if (matchedItem) {
-      console.log(`Matched existing inventory item by ID:`, matchedItem);
-      // Nếu là hàng hóa hiện có, sử dụng thông tin của hàng hóa đó
-
-      // Đối với cả hàng hóa (HH) và chi phí (CP), lưu ID để có thể cập nhật
-      form.setValue(`details.${index}.inventory_id`, matchedItem.id)
-      form.setValue(`details.${index}.item_name`, matchedItem.item_name) // Lưu tên hàng hóa, không phải ID
-      form.setValue(`details.${index}.unit`, matchedItem.unit)
-      form.setValue(`details.${index}.category`, matchedItem.category)
-    } else {
-      // Kiểm tra xem value có phải là ID không
-      const isNumeric = /^\d+$/.test(value);
-
-      if (isNumeric) {
-        console.log(`Value appears to be an ID but no matching item found:`, value);
-        // Nếu là ID nhưng không tìm thấy hàng hóa, đặt inventory_id = null
-        form.setValue(`details.${index}.inventory_id`, null)
-        // Giữ nguyên item_name hiện tại nếu có
-        const currentItemName = form.getValues(`details.${index}.item_name`);
-        if (!currentItemName) {
-          form.setValue(`details.${index}.item_name`, "");
-        }
-      } else {
-        // Nếu là hàng hóa mới, sử dụng giá trị nhập vào làm tên hàng hóa
-        // Kiểm tra xem có phải là tên hàng hóa hiện có không
-        const matchedByName = inventoryItems.find(
-          item => item.item_name.toLowerCase() === value.toLowerCase()
-        )
-
-        if (matchedByName) {
-          console.log(`Matched existing inventory item by name:`, matchedByName);
-          // Nếu tìm thấy hàng hóa theo tên, sử dụng thông tin của hàng hóa đó
-          form.setValue(`details.${index}.inventory_id`, matchedByName.id)
-          form.setValue(`details.${index}.item_name`, matchedByName.item_name)
-          form.setValue(`details.${index}.unit`, matchedByName.unit)
-          form.setValue(`details.${index}.category`, matchedByName.category)
-        } else {
-          console.log(`Creating new inventory item with name:`, value);
-          // Nếu không tìm thấy, sử dụng giá trị nhập vào làm tên hàng hóa mới
-          form.setValue(`details.${index}.inventory_id`, null)
-          form.setValue(`details.${index}.item_name`, value)
-          // Để người dùng nhập đơn vị tính và chọn loại
-          if (!form.getValues(`details.${index}.unit`)) {
-            form.setValue(`details.${index}.unit`, "")
-          }
-        }
-      }
-    }
-
-    // Ghi log giá trị cuối cùng
-    console.log(`Final values for row ${index}:`, {
-      inventory_id: form.getValues(`details.${index}.inventory_id`),
-      item_name: form.getValues(`details.${index}.item_name`),
-      unit: form.getValues(`details.${index}.unit`),
-      category: form.getValues(`details.${index}.category`)
-    });
-
-    handleDetailFieldChange(index)
-  }
-
-  // Xử lý khi người dùng nhập vào ô tìm kiếm hàng hóa
-  const handleInventoryInputChange = (_value: string, _index: number) => {
-    // Không cần làm gì đặc biệt khi người dùng nhập, vì sẽ xử lý khi người dùng chọn hoặc đóng combobox
-  }
-
-  // Xử lý khi người dùng nhập hoặc chọn nhà cung cấp
-  const handleSupplierChange = (value: string, index: number) => {
-    // Kiểm tra xem giá trị có phải là ID của nhà cung cấp hiện có không
-    const matchedSupplier = suppliers.find(supplier => supplier.id.toString() === value)
-
-    if (matchedSupplier) {
-      // Nếu là nhà cung cấp hiện có, sử dụng thông tin của nhà cung cấp đó
-      form.setValue(`details.${index}.supplier_id`, matchedSupplier.id)
-      form.setValue(`details.${index}.seller_name`, matchedSupplier.name)
-      form.setValue(`details.${index}.seller_tax_code`, matchedSupplier.tax_code || "")
-    } else {
-      // Nếu là nhà cung cấp mới, sử dụng giá trị nhập vào làm tên nhà cung cấp
-      // Kiểm tra xem có phải là tên nhà cung cấp hiện có không
-      const matchedByName = suppliers.find(
-        supplier => supplier.name.toLowerCase() === value.toLowerCase()
-      )
-
-      if (matchedByName) {
-        // Nếu tìm thấy nhà cung cấp theo tên, sử dụng thông tin của nhà cung cấp đó
-        form.setValue(`details.${index}.supplier_id`, matchedByName.id)
-        form.setValue(`details.${index}.seller_name`, matchedByName.name)
-        form.setValue(`details.${index}.seller_tax_code`, matchedByName.tax_code || "")
-      } else {
-        // Nếu không tìm thấy, sử dụng giá trị nhập vào làm tên nhà cung cấp mới
-        form.setValue(`details.${index}.supplier_id`, null)
-        form.setValue(`details.${index}.seller_name`, value)
-        form.setValue(`details.${index}.seller_tax_code`, "")
-      }
-    }
-
-    handleDetailFieldChange(index)
-  }
-
-  // Xử lý khi người dùng nhập vào ô tìm kiếm nhà cung cấp
-  const handleSupplierInputChange = (_value: string, _index: number) => {
-    // Không cần làm gì đặc biệt khi người dùng nhập, vì sẽ xử lý khi người dùng chọn hoặc đóng combobox
-  }
 
   // Xử lý thêm mới nhà cung cấp
   const handleAddSupplier = async (data: SupplierFormValues) => {
@@ -450,23 +1124,23 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
         const updatedSuppliers = [...suppliers, newSupplier]
         setSuppliers(updatedSuppliers)
 
-        // Áp dụng nhà cung cấp vừa tạo vào dòng hiện tại
-        if (currentDetailIndex !== null) {
-          handleSupplierChange(newSupplier.id.toString(), currentDetailIndex)
-        }
+        // Cập nhật thông tin người bán mặc định
+        setDefaultSupplierId(newSupplier.id);
+        setDefaultSellerName(newSupplier.name);
+        setDefaultSellerTaxCode(newSupplier.tax_code || "");
 
         setIsSupplierModalOpen(false)
         supplierForm.reset()
 
         // Hiển thị thông báo thành công
-        toast.success("Thêm nhà cung cấp thành công", {
-          description: `Đã thêm nhà cung cấp ${newSupplier.name} vào hệ thống`,
+        toast.success("Thêm người bán thành công", {
+          description: `Đã thêm người bán ${newSupplier.name} vào hệ thống`,
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
         })
       } else {
-        setError("Không thể tạo nhà cung cấp mới")
-        toast.error("Không thể tạo nhà cung cấp mới", {
+        setError("Không thể tạo người bán mới")
+        toast.error("Không thể tạo người bán mới", {
           description: result?.message || "Vui lòng kiểm tra lại thông tin",
           className: "text-lg font-medium",
           descriptionClassName: "text-base"
@@ -474,9 +1148,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       }
     } catch (err) {
       console.error("Error adding supplier:", err)
-      setError("Đã xảy ra lỗi khi tạo nhà cung cấp mới")
+      setError("Đã xảy ra lỗi khi tạo người bán mới")
       toast.error("Đã xảy ra lỗi", {
-        description: "Đã xảy ra lỗi khi tạo nhà cung cấp mới",
+        description: "Đã xảy ra lỗi khi tạo người bán mới",
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       })
@@ -485,79 +1159,11 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
   }
 
-  // Xử lý thêm mới hàng hóa (chỉ hiển thị trong bảng, không lưu vào cơ sở dữ liệu)
-  const handleAddInventory = async (data: InventoryFormValues) => {
-    try {
-      setLoading(true)
 
-      console.log('Adding inventory item to table:', data);
-
-      // Tạo một đối tượng hàng hóa tạm thời
-      const tempInventory = {
-        id: null, // Không có ID vì chưa lưu vào cơ sở dữ liệu
-        item_name: data.item_name,
-        unit: data.unit,
-        quantity: data.quantity,
-        category: data.category,
-        price: data.category === 'CP' ? (currentDetailIndex !== null ? Number(form.getValues("details")[currentDetailIndex]?.price_before_tax || 0) : 0) : 0
-      };
-
-      // Áp dụng hàng hóa vào dòng hiện tại
-      if (currentDetailIndex !== null) {
-        // Reset các giá trị trước khi áp dụng hàng hóa mới
-        form.setValue(`details.${currentDetailIndex}.price_before_tax` as any, tempInventory.price)
-        form.setValue(`details.${currentDetailIndex}.tax_rate` as any, "10%")
-
-        // Áp dụng hàng hóa mới và cập nhật đơn vị tính trực tiếp
-        // Đặt inventory_id = null vì chưa lưu vào cơ sở dữ liệu
-        // Khi nhấn nút "Thêm hóa đơn", hệ thống sẽ tạo hàng hóa mới và lưu ID
-        form.setValue(`details.${currentDetailIndex}.inventory_id` as any, null)
-        form.setValue(`details.${currentDetailIndex}.item_name` as any, tempInventory.item_name)
-        form.setValue(`details.${currentDetailIndex}.unit` as any, tempInventory.unit)
-        form.setValue(`details.${currentDetailIndex}.category` as any, tempInventory.category)
-
-        // Đối với chi phí, sử dụng số lượng đã nhập trong form thêm hàng hóa
-        if (data.category === 'CP' && data.quantity > 0) {
-          console.log(`Setting quantity for expense item to ${data.quantity}`);
-          form.setValue(`details.${currentDetailIndex}.quantity` as any, data.quantity);
-        }
-
-        // Cập nhật giao diện
-        form.trigger(`details.${currentDetailIndex}` as any)
-
-        // Cập nhật các tính toán
-        handleDetailFieldChange(currentDetailIndex)
-        calculateDetailTotals(currentDetailIndex)
-      }
-
-      setIsInventoryModalOpen(false)
-      inventoryForm.reset()
-
-      // Hiển thị thông báo thành công
-      toast.success("Thêm hàng hóa thành công", {
-        description: `Đã thêm hàng hóa ${tempInventory.item_name} vào bảng`,
-        className: "text-lg font-medium",
-        descriptionClassName: "text-base"
-      })
-    } catch (err) {
-      console.error("Error adding inventory:", err)
-      setError("Đã xảy ra lỗi khi thêm hàng hóa")
-      toast.error("Đã xảy ra lỗi", {
-        description: "Đã xảy ra lỗi khi thêm hàng hóa",
-        className: "text-lg font-medium",
-        descriptionClassName: "text-base"
-      })
-    } finally {
-      setLoading(false)
-    }
-  }
 
     // Sử dụng các hàm định dạng từ utils
 
-  // Hàm làm tròn số thập phân đến 3 chữ số thập phân
-  const roundToThreeDecimals = (value: number): number => {
-    return Math.round(value * 1000) / 1000;
-  };
+  // Các hàm làm tròn đã được loại bỏ để giữ nguyên giá trị chính xác
 
   // Xử lý thêm chi tiết hàng hóa mới trong chế độ chỉnh sửa
   // Lưu ý: Hàm này đã được thay thế bằng logic trong handleUpdateDetailInEditMode
@@ -577,20 +1183,87 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       // Tính toán lại các giá trị tổng
       calculateDetailTotals(index);
 
+      // Lấy lại dữ liệu sau khi tính toán
+      const updatedDetails = form.getValues("details");
+      const updatedDetail = updatedDetails[index];
+
+      // Nếu là chi tiết mới (chưa có ID), thêm mới vào database
+      if (!updatedDetail.id) {
+        console.log("Adding new detail to database:", updatedDetail);
+
+        // Chuẩn bị dữ liệu để thêm mới
+        const newDetailData = {
+          category: updatedDetail.category || "HH",
+          item_name: String(updatedDetail.item_name || ''),
+          unit: updatedDetail.unit || "",
+          quantity: Number(updatedDetail.quantity) || 0,
+          price_before_tax: Number(updatedDetail.price_before_tax) || 0,
+          tax_rate: updatedDetail.tax_rate || "0%",
+          supplier_id: updatedDetail.supplier_id || null,
+          inventory_id: updatedDetail.inventory_id || null,
+          seller_name: updatedDetail.seller_name || "",
+          seller_tax_code: updatedDetail.seller_tax_code || "",
+          total_before_tax: Number(updatedDetail.total_before_tax) || 0,
+          tax_amount: Number(updatedDetail.tax_amount) || 0,
+          total_after_tax: Number(updatedDetail.total_after_tax) || 0,
+          is_manually_edited: updatedDetail.is_manually_edited || false
+        };
+
+        // Gọi API để thêm chi tiết mới
+        const result = await addImportDetail(initialData.id, newDetailData);
+
+        if (result && result.success) {
+          // Cập nhật ID cho chi tiết vừa thêm
+          form.setValue(`details.${index}.id`, result.data.id);
+
+          console.log("Successfully added new detail with ID:", result.data.id);
+        }
+      } else {
+        // Nếu là chi tiết đã tồn tại, cập nhật trong database
+        console.log("Updating existing detail in database:", updatedDetail);
+
+        // Chuẩn bị dữ liệu để cập nhật
+        const updateDetailData = {
+          category: updatedDetail.category || "HH",
+          item_name: String(updatedDetail.item_name || ''),
+          unit: updatedDetail.unit || "",
+          quantity: Number(updatedDetail.quantity) || 0,
+          price_before_tax: Number(updatedDetail.price_before_tax) || 0,
+          tax_rate: updatedDetail.tax_rate || "0%",
+          supplier_id: updatedDetail.supplier_id || null,
+          inventory_id: updatedDetail.inventory_id || null,
+          seller_name: updatedDetail.seller_name || "",
+          seller_tax_code: updatedDetail.seller_tax_code || "",
+          total_before_tax: Number(updatedDetail.total_before_tax) || 0,
+          tax_amount: Number(updatedDetail.tax_amount) || 0,
+          total_after_tax: Number(updatedDetail.total_after_tax) || 0,
+          is_manually_edited: updatedDetail.is_manually_edited || false
+        };
+
+        // Gọi API để cập nhật chi tiết
+        await updateImportDetail(initialData.id, updatedDetail.id, updateDetailData);
+
+        console.log("Successfully updated detail with ID:", updatedDetail.id);
+      }
+
       // Tắt chế độ chỉnh sửa
       setEditingRowIndex(null);
 
+      // Không tự động cập nhật tổng tiền hóa đơn
+      // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả"
+
       // Hiển thị thông báo thành công
       toast.success("Cập nhật hàng hóa thành công", {
-        description: `Đã cập nhật hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
+        description: `Đã lưu thay đổi cho hàng hóa ${updatedDetail.item_name} vào cơ sở dữ liệu.`,
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       });
+
     } catch (err) {
       console.error("Error updating detail in edit mode:", err);
       setError("Đã xảy ra lỗi khi cập nhật hàng hóa");
       toast.error("Đã xảy ra lỗi", {
-        description: "Đã xảy ra lỗi khi cập nhật hàng hóa",
+        description: "Đã xảy ra lỗi khi lưu hàng hóa vào cơ sở dữ liệu",
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       });
@@ -617,6 +1290,26 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
         // Nếu là chi tiết mới chưa lưu, chỉ cần xóa khỏi form
         remove(index);
 
+        // Nếu đã xóa hàng cuối cùng, thêm một hàng mới trống
+        setTimeout(() => {
+          if (form.getValues("details")?.length === 0) {
+            append({
+              category: "HH",
+              item_name: "",
+              unit: "",
+              quantity: 0,
+              price_before_tax: 0,
+              tax_rate: "0%",
+              supplier_id: null,
+              inventory_id: null,
+              total_before_tax: 0,
+              tax_amount: 0,
+              total_after_tax: 0,
+              is_manually_edited: false,
+            });
+          }
+        }, 100);
+
         // Hiển thị thông báo thành công
         toast.success("Xóa hàng hóa thành công", {
           description: `Đã xóa hàng hóa ${detail.item_name} trong form. Nhấn nút "Cập nhật hóa đơn" để lưu các thay đổi.`,
@@ -632,6 +1325,26 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
       // Xóa chi tiết khỏi form
       remove(index);
+
+      // Nếu đã xóa hàng cuối cùng, thêm một hàng mới trống
+      setTimeout(() => {
+        if (form.getValues("details")?.length === 0) {
+          append({
+            category: "HH",
+            item_name: "",
+            unit: "",
+            quantity: 0,
+            price_before_tax: 0,
+            tax_rate: "10%",
+            supplier_id: null,
+            inventory_id: null,
+            total_before_tax: 0,
+            tax_amount: 0,
+            total_after_tax: 0,
+            is_manually_edited: false,
+          });
+        }
+      }, 100);
 
       // Đảm bảo các trường bắt buộc được cập nhật đúng cách
       // Trigger validation cho tất cả các trường
@@ -676,12 +1389,83 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       return;
     }
 
+    // Nếu có thông tin người bán mặc định nhưng chưa có trong database, thêm mới
+    if (defaultSellerName && !defaultSupplierId) {
+      try {
+        setLoading(true);
+        const result = await createSupplier({
+          name: defaultSellerName,
+          tax_code: defaultSellerTaxCode,
+        });
+
+        if (result && result.success) {
+          const newSupplier = result.data;
+          setDefaultSupplierId(newSupplier.id);
+
+          // Cập nhật danh sách người bán
+          const updatedSuppliers = [...suppliers, newSupplier];
+          setSuppliers(updatedSuppliers);
+
+          // Cập nhật supplier_id cho các dòng có cùng tên người bán
+          const details = form.getValues("details");
+          details.forEach((detail, index) => {
+            if (detail.seller_name === defaultSellerName) {
+              form.setValue(`details.${index}.supplier_id`, newSupplier.id);
+            }
+          });
+
+          toast.success("Đã thêm người bán mới", {
+            description: `Đã thêm người bán "${newSupplier.name}" vào hệ thống`,
+            className: "text-lg font-medium",
+            descriptionClassName: "text-base"
+          });
+        }
+      } catch (err) {
+        console.error("Error adding new supplier:", err);
+        toast.error("Lỗi khi thêm người bán mới", {
+          description: "Vẫn tiếp tục lưu hóa đơn",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
+      } finally {
+        setLoading(false);
+      }
+    }
+
+    // Kiểm tra và cập nhật các hàng hóa mới theo tên
+    let processedDetails = [...data.details];
+
+    // Duyệt qua từng chi tiết để kiểm tra hàng hóa trùng tên
+    for (let i = 0; i < processedDetails.length; i++) {
+      const detail = processedDetails[i];
+
+      // Nếu chưa có inventory_id nhưng có tên hàng hóa
+      if (!detail.inventory_id && detail.item_name) {
+        // Tìm hàng hóa trùng tên (so sánh không phân biệt hoa thường)
+        const matchedInventory = inventoryItems.find(
+          item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+        );
+
+        if (matchedInventory) {
+          console.log(`Found existing inventory in ADD mode with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+
+          // Cập nhật thông tin hàng hóa với thông tin từ hàng hóa đã có
+          processedDetails[i] = {
+            ...detail,
+            inventory_id: matchedInventory.id,
+            unit: detail.unit || matchedInventory.unit,
+            category: matchedInventory.category
+          };
+        }
+      }
+    }
+
     // Tạo một bản sao của dữ liệu và đặt trường note rõ ràng
     const formData = {
       ...data,
       note: data.note === undefined || data.note === null ? "" : data.note,
-      // Đảm bảo các chi tiết có tên hàng hóa được gửi đúng
-      details: data.details.map(detail => ({
+      // Đảm bảo các chi tiết có tên hàng hóa được gửi đúng và đã được xử lý hàng hóa trùng tên
+      details: processedDetails.map(detail => ({
         ...detail,
         // Đảm bảo item_name là chuỗi
         item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
@@ -722,10 +1506,23 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
               item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
               // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
               inventory_id: detail.inventory_id,
-              // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-              total_before_tax: undefined,
-              total_after_tax: undefined,
-              tax_amount: undefined
+              // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì tính toán lại
+              total_before_tax: detail.is_manually_edited
+                ? Number(detail.total_before_tax)
+                : Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+              // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì tính toán lại
+              tax_amount: detail.is_manually_edited
+                ? Number(detail.tax_amount)
+                : Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+              // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì tính toán lại
+              total_after_tax: detail.is_manually_edited
+                ? Number(detail.total_after_tax)
+                : Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+                  Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+              // Đánh dấu trạng thái chỉnh sửa thủ công
+              is_manually_edited: detail.is_manually_edited || false
             };
 
             await updateImportDetail(initialData.id, detail.id, detailData);
@@ -776,6 +1573,27 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
             );
 
             if (detailIndex !== -1) {
+              // Kiểm tra xem có hàng hóa trùng tên trong cơ sở dữ liệu không
+              let matchedInventory = null;
+
+              // Nếu chưa có inventory_id nhưng có tên hàng hóa
+              if (!detail.inventory_id && detail.item_name) {
+                // Tìm hàng hóa trùng tên (so sánh không phân biệt hoa thường)
+                matchedInventory = inventoryItems.find(
+                  item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+                );
+
+                if (matchedInventory) {
+                  console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+                  // Hiển thị thông báo cho người dùng
+                  toast.info(`Tìm thấy hàng hóa "${matchedInventory.item_name}" trong cơ sở dữ liệu`, {
+                    description: "Sẽ cập nhật số lượng cho hàng hóa này thay vì tạo mới",
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
+                  });
+                }
+              }
+
               // Chuẩn bị dữ liệu gửi đi
               const detailData = {
                 ...detail,
@@ -783,11 +1601,17 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 price_before_tax: Number(detail.price_before_tax),
                 // Đảm bảo item_name là chuỗi
                 item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
-                // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
-                inventory_id: detail.inventory_id,
-                total_before_tax: undefined,
-                total_after_tax: undefined,
-                tax_amount: undefined
+                // Nếu tìm thấy hàng hóa trùng tên, sử dụng ID của hàng hóa đó
+                inventory_id: matchedInventory ? matchedInventory.id : detail.inventory_id,
+                // Nếu tìm thấy hàng hóa trùng tên, sử dụng đơn vị của hàng hóa đó nếu chưa có đơn vị
+                unit: matchedInventory && !detail.unit ? matchedInventory.unit : detail.unit,
+                // Nếu tìm thấy hàng hóa trùng tên, sử dụng loại của hàng hóa đó
+                category: matchedInventory ? matchedInventory.category : detail.category,
+                // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì để backend tính toán
+                total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
+                tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
+                total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
+                is_manually_edited: detail.is_manually_edited || false
               };
 
               console.log('New detail data with inventory_id:', detail.inventory_id);
@@ -808,7 +1632,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 const updatedDetails = updatedImport.details.map((d: any) => ({
                   ...d,
                   quantity: Number(d.quantity) || 0,
-                  price_before_tax: Number(d.price_before_tax) || 0,
+                  // Làm tròn đơn giá đến 3 chữ số thập phân
+                  price_before_tax: Math.round((Number(d.price_before_tax) || 0) * 1000) / 1000,
                   tax_rate: d.tax_rate || "0%",
                   // Đảm bảo item_name luôn được cập nhật
                   item_name: d.item_name || ""
@@ -853,7 +1678,12 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
               unit: detail.unit || "",
               quantity: Number(detail.quantity) || 0,
               price_before_tax: Number(detail.price_before_tax) || 0,
-              tax_rate: detail.tax_rate || "0%"
+              tax_rate: detail.tax_rate || "0%",
+              // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
+              total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
+              tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
+              total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
+              is_manually_edited: detail.is_manually_edited || false
             }))
           };
 
@@ -899,13 +1729,23 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       invoice_date: formData.invoice_date || new Date(),
       description: formData.description || "",
       note: formData.note === undefined || formData.note === null ? "" : formData.note,
+      // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
+      total_before_tax: formData.is_invoice_totals_manually_edited ? Number(formData.total_before_tax) : Number(formData.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_before_tax) || 0), 0)),
+      total_tax: formData.is_invoice_totals_manually_edited ? Number(formData.total_tax) : Number(formData.details.reduce((sum: number, detail: any) => sum + (Number(detail.tax_amount) || 0), 0)),
+      total_after_tax: formData.is_invoice_totals_manually_edited ? Number(formData.total_after_tax) : Number(formData.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_after_tax) || 0), 0)),
+      is_invoice_totals_manually_edited: formData.is_invoice_totals_manually_edited || false,
       details: formData.details.map((detail: any) => ({
         ...detail,
         item_name: detail.item_name || "",
         unit: detail.unit || "",
         quantity: Number(detail.quantity) || 0,
         price_before_tax: Number(detail.price_before_tax) || 0,
-        tax_rate: detail.tax_rate || "0%"
+        tax_rate: detail.tax_rate || "0%",
+        // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
+        total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
+        tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
+        total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
+        is_manually_edited: detail.is_manually_edited || false
       }))
     };
 
@@ -915,6 +1755,12 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     // Lấy lại dữ liệu form sau khi reset
     const finalData = form.getValues();
     console.log("Final data for submit:", finalData);
+    console.log("Manual edit flags:", {
+      is_invoice_totals_manually_edited: finalData.is_invoice_totals_manually_edited,
+      total_before_tax: finalData.total_before_tax,
+      total_tax: finalData.total_tax,
+      total_after_tax: finalData.total_after_tax
+    });
     onSubmit(finalData);
   };
 
@@ -933,7 +1779,13 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   };
 
   return (
-    <form onSubmit={form.handleSubmit(handleFormSubmit, handleInvalidSubmit)} className="space-y-3 md:space-y-4 w-full overflow-x-hidden max-w-full">
+    <form
+      onSubmit={(e) => {
+        // Đặt isSubmitted = true khi form được submit
+        setIsSubmitted(true);
+        form.handleSubmit(handleFormSubmit, handleInvalidSubmit)(e);
+      }}
+      className="space-y-3 md:space-y-4 w-full overflow-x-hidden max-w-full">
       {error && (
         <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded">
           {error}
@@ -941,9 +1793,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       )}
 
       {/* Hàng 1: Số hóa đơn, ngày lập hóa đơn, mô tả */}
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-3 md:gap-4 max-w-full">
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-2 md:gap-3 max-w-full">
         <div className="flex flex-wrap items-center">
-          <Label htmlFor="invoice_number" className="text-base md:text-xl font-bold mr-2 min-w-[120px] sm:min-w-0">Số hóa đơn:</Label>
+          <Label htmlFor="invoice_number" className="text-sm md:text-base font-bold mr-2 min-w-[90px] sm:min-w-0">Số hóa đơn:</Label>
           <div className="flex-1">
             <Input
               id="invoice_number"
@@ -951,16 +1803,16 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 onChange: () => form.formState.errors.invoice_number && form.clearErrors("invoice_number")
               })}
               disabled={isViewMode}
-              className={`h-10 md:h-12 text-base md:text-xl ${isSubmitted && form.formState.errors.invoice_number ? "border-red-500" : ""}`}
+              className={`h-8 md:h-10 text-sm md:text-base rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300 ${isSubmitted && form.formState.errors.invoice_number ? "border-red-500" : ""}`}
             />
             {isSubmitted && form.formState.errors.invoice_number && (
-              <p className="text-red-500 text-sm mt-1">{form.formState.errors.invoice_number.message}</p>
+              <p className="text-red-500 text-xs mt-1">{form.formState.errors.invoice_number.message}</p>
             )}
           </div>
         </div>
 
         <div className="flex flex-wrap items-center">
-          <Label htmlFor="invoice_date" className="text-base md:text-xl font-bold mr-2 min-w-[120px] sm:min-w-0">Ngày hóa đơn:</Label>
+          <Label htmlFor="invoice_date" className="text-sm md:text-base font-bold mr-2 min-w-[90px] sm:min-w-0">Ngày hóa đơn:</Label>
           <div className="flex-1">
             <Controller
               name="invoice_date"
@@ -970,199 +1822,516 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                   date={field.value}
                   setDate={(date) => field.onChange(date)}
                   disabled={isViewMode}
-                  className="h-10 md:h-12 text-base md:text-xl w-full"
+                  className="h-8 md:h-10 text-sm md:text-base w-full"
                   placeholder="Chọn ngày lập hóa đơn"
                 />
               )}
             />
             {isSubmitted && form.formState.errors.invoice_date && (
-              <p className="text-red-500 text-sm mt-1">{form.formState.errors.invoice_date.message}</p>
+              <p className="text-red-500 text-xs mt-1">{form.formState.errors.invoice_date.message}</p>
             )}
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center">
-          <Label htmlFor="description" className="text-base md:text-xl font-bold mr-2 min-w-[120px] sm:min-w-0">Mô tả:</Label>
-          <div className="flex-1">
-            <Textarea
-              id="description"
-              {...form.register("description")}
-              disabled={isViewMode}
-              className="min-h-10 md:min-h-12 text-base md:text-xl px-3 md:px-4 py-2 md:py-3 h-10 md:h-12 w-full"
-            />
-          </div>
-        </div>
 
-        <div className="flex flex-wrap items-center">
-          <Label htmlFor="note" className="text-base md:text-xl font-bold mr-2 min-w-[120px] sm:min-w-0">Ghi chú:</Label>
-          <div className="flex-1">
-            <Textarea
-              id="note"
-              {...form.register("note", {
-                onChange: (e) => {
-                  // Đảm bảo rằng giá trị rỗng được gửi đi khi người dùng xóa ghi chú
-                  console.log("Note value changed to:", e.target.value);
-                  // Cập nhật giá trị trực tiếp vào form
-                  form.setValue("note", e.target.value);
-                }
-              })}
-              disabled={isViewMode}
-              className="min-h-10 md:min-h-12 text-base md:text-xl px-3 md:px-4 py-2 md:py-3 h-10 md:h-12 w-full"
-            />
-          </div>
-        </div>
       </div>
 
-      {/* Hàng 2: Tổng tiền */}
-      <div className="grid grid-cols-1 gap-3 md:gap-4 max-w-full">
+
+
+      {/* Hàng 1: Thông tin người bán và Tổng tiền */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-full">
+        {/* Thông tin người bán */}
+        <div className="max-w-full">
+          <Label className="text-sm md:text-base mb-1 md:mb-2 block">Thông tin người bán</Label>
+          <div className="p-3 border rounded-md bg-blue-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
+            <div className="flex flex-col space-y-2">
+              {/* Trường nhập liệu tên người bán */}
+              <div className="flex-1">
+                <Label htmlFor="default_seller_name" className="text-xs font-medium mb-1 block">Tên người bán:</Label>
+                <div className="relative">
+                  <Input
+                    ref={sellerInputRef}
+                    id="default_seller_name"
+                    type="text"
+                    placeholder="Nhập tên người bán"
+                    value={defaultSellerName}
+                    onChange={(e) => {
+                      const value = e.target.value;
+                      setDefaultSellerName(value);
+
+                      // Tự động áp dụng tên người bán cho tất cả dòng
+                      const details = form.getValues("details");
+                      details.forEach((_, index) => {
+                        form.setValue(`details.${index}.seller_name`, value);
+                      });
+
+                      // Tìm kiếm người bán phù hợp
+                      if (value.length > 0) {
+                        const filteredSuppliers = suppliers.filter(supplier =>
+                          supplier.name.toLowerCase().includes(value.toLowerCase()) ||
+                          (supplier.tax_code && supplier.tax_code.toLowerCase().includes(value.toLowerCase()))
+                        );
+                        setFilteredSuppliers(filteredSuppliers);
+                        setShowSellerDropdown(filteredSuppliers.length > 0);
+                      } else {
+                        setShowSellerDropdown(false);
+                      }
+                    }}
+                    onFocus={() => {
+                      // Hiển thị dropdown khi focus nếu có kết quả
+                      if (defaultSellerName.length > 0 && filteredSuppliers.length > 0) {
+                        setShowSellerDropdown(true);
+                      }
+                    }}
+                    onBlur={() => {
+                      // Ẩn dropdown sau một khoảng thời gian ngắn để cho phép click vào dropdown
+                      setTimeout(() => {
+                        setShowSellerDropdown(false);
+                      }, 150);
+                    }}
+                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                    disabled={isViewMode}
+                  />
+
+                  {/* Dropdown hiển thị danh sách người bán */}
+                  {showSellerDropdown && filteredSuppliers.length > 0 && (
+                    <DropdownPortal
+                      targetRef={sellerInputRef}
+                      isOpen={showSellerDropdown}
+                      onClose={() => setShowSellerDropdown(false)}
+                    >
+                      {filteredSuppliers.slice(0, 5).map((supplier) => (
+                        <div
+                          key={supplier.id}
+                          className="px-3 py-2 hover:bg-blue-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                          onMouseDown={(e) => {
+                            // Ngăn sự kiện mousedown lan truyền
+                            e.preventDefault();
+                            e.stopPropagation();
+
+                            // Cập nhật thông tin người bán mặc định
+                            setDefaultSellerName(supplier.name);
+                            setDefaultSellerTaxCode(supplier.tax_code || "");
+                            setDefaultSupplierId(supplier.id);
+
+                            // Áp dụng cho tất cả dòng hàng hóa
+                            const details = form.getValues("details");
+                            details.forEach((_, index) => {
+                              form.setValue(`details.${index}.supplier_id`, supplier.id);
+                              form.setValue(`details.${index}.seller_name`, supplier.name);
+                              form.setValue(`details.${index}.seller_tax_code`, supplier.tax_code || "");
+                            });
+
+                            // Ẩn dropdown sau khi chọn
+                            setShowSellerDropdown(false);
+
+                            // Focus vào input sau khi chọn
+                            setTimeout(() => {
+                              if (sellerInputRef.current) {
+                                sellerInputRef.current.focus();
+                              }
+                            }, 10);
+                          }}
+                        >
+                          <div className="text-sm font-medium">{supplier.name}</div>
+                          <div className="text-xs text-gray-500">
+                            {supplier.tax_code && `MST: ${supplier.tax_code}`}
+                          </div>
+                        </div>
+                      ))}
+                    </DropdownPortal>
+                  )}
+                </div>
+              </div>
+
+              {/* Trường nhập liệu mã số thuế */}
+              <div className="flex-1">
+                <Label htmlFor="default_seller_tax_code" className="text-xs font-medium mb-1 block">Mã số thuế:</Label>
+                <Input
+                  id="default_seller_tax_code"
+                  type="text"
+                  placeholder="Nhập mã số thuế"
+                  value={defaultSellerTaxCode}
+                  onChange={(e) => {
+                    const value = e.target.value;
+                    setDefaultSellerTaxCode(value);
+
+                    // Tự động áp dụng mã số thuế cho tất cả dòng
+                    const details = form.getValues("details");
+                    details.forEach((_, index) => {
+                      form.setValue(`details.${index}.seller_tax_code`, value);
+                    });
+                  }}
+                  className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                  disabled={isViewMode}
+                />
+              </div>
+
+            </div>
+
+            {/* Thông báo về việc tự động áp dụng */}
+            <div className="text-xs text-blue-600 italic mt-1">
+              Thông tin người bán sẽ tự động áp dụng cho tất cả hàng hóa. Người bán mới sẽ tự động được thêm vào hệ thống khi lưu hóa đơn.
+            </div>
+          </div>
+        </div>
+
         {/* Tổng tiền */}
         <div className="max-w-full">
-          <Label className="text-base mb-2 md:mb-3 block">Tổng tiền</Label>
-          <div className="p-2 md:p-4 border rounded-md bg-gray-50 space-y-1 md:space-y-2 max-w-full">
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
-              <span className="font-medium text-sm md:text-base">Tổng tiền trước thuế:</span>
-              <span className="text-sm md:text-base font-bold">
-                {formatCurrency(
-                  roundToThreeDecimals(
-                    form.getValues("details")?.reduce(
-                      (sum, detail) => sum + (Number(detail.quantity || 0) * Number(detail.price_before_tax || 0)),
-                      0
-                    ) || 0
-                  )
+          <Label className="text-sm md:text-base mb-1 md:mb-2 block">Tổng tiền</Label>
+          <div className="p-3 border rounded-md bg-blue-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              {/* Tổng tiền trước thuế */}
+              <div className="flex-1">
+                <Label htmlFor="total_before_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền trước thuế:</Label>
+                {isViewMode ? (
+                  <span className="text-sm font-bold">
+                    {formatCurrency(
+                      // Sử dụng trực tiếp giá trị total_before_tax từ API nếu có
+                      initialData && initialData.total_before_tax
+                        ? initialData.total_before_tax
+                        : form.getValues("details")?.reduce(
+                            (sum, detail) => sum + (Number(detail.total_before_tax || 0)),
+                            0
+                          ) || 0
+                    )}
+                  </span>
+                ) : (
+                  <Input
+                    id="total_before_tax"
+                    type="text"
+                    inputMode="decimal"
+                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                    value={totalBeforeTaxDisplay}
+                    onChange={(e) => {
+                      // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                      const rawValue = e.target.value;
+                      const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                      // Cập nhật display value với formatting
+                      e.target.value = formattedValue;
+                      setTotalBeforeTaxDisplay(formattedValue);
+
+                      // Parse và lưu giá trị số nguyên vào form
+                      const numValue = parseIntegerNumber(formattedValue);
+                      form.setValue("total_before_tax", numValue);
+
+                      // Đánh dấu là đã chỉnh sửa thủ công
+                      form.setValue("is_invoice_totals_manually_edited", true);
+                    }}
+                    onBlur={(e) => {
+                      // Xử lý khi người dùng hoàn tất nhập liệu
+                      let value = e.target.value.replace(/[^\d,]/g, '');
+
+                      // Xử lý dấu phẩy
+                      const commaCount = (value.match(/,/g) || []).length;
+                      if (commaCount > 1) {
+                        const parts = value.split(',');
+                        value = parts[0] + ',' + parts.slice(1).join('');
+                      }
+
+                      // Chuyển đổi sang số sử dụng parseVietnameseNumber
+                      const numValue = parseVietnameseNumber(value);
+
+                      // Định dạng lại giá trị hiển thị
+                      setTotalBeforeTaxDisplay(formatCurrencyInput(numValue));
+
+                      // Cập nhật giá trị tổng tiền trước thuế trong form
+                      form.setValue("total_before_tax", numValue);
+                      form.setValue("is_invoice_totals_manually_edited", true);
+
+                      // Không tự động cập nhật các ô khác hoặc phân bổ tỷ lệ
+                      // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả"
+                    }}
+                  />
                 )}
-              </span>
+              </div>
+              {/* Tổng tiền thuế */}
+              <div className="flex-1">
+                <Label htmlFor="total_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền thuế:</Label>
+                {isViewMode ? (
+                  <span className="text-sm font-bold">
+                    {(() => {
+                      const totalTaxFromInitial = initialData && initialData.total_tax ? initialData.total_tax : null;
+                      const totalTaxFromDetails = form.getValues("details")?.reduce(
+                        (sum, detail) => sum + (Number(detail.tax_amount || 0)),
+                        0
+                      ) || 0;
+
+                      console.log('Total tax display debug:', {
+                        initialData_total_tax: totalTaxFromInitial,
+                        calculated_from_details: totalTaxFromDetails,
+                        using_value: totalTaxFromInitial || totalTaxFromDetails
+                      });
+
+                      return formatCurrency(totalTaxFromInitial || totalTaxFromDetails);
+                    })()}
+                  </span>
+                ) : (
+                  <Input
+                    id="total_tax"
+                    type="text"
+                    inputMode="decimal"
+                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                    value={totalTaxDisplay}
+                    onChange={(e) => {
+                      // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                      const rawValue = e.target.value;
+                      const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                      // Cập nhật display value với formatting
+                      e.target.value = formattedValue;
+                      setTotalTaxDisplay(formattedValue);
+
+                      // Parse và lưu giá trị số nguyên vào form
+                      const numValue = parseIntegerNumber(formattedValue);
+                      form.setValue("total_tax", numValue);
+
+                      // Đánh dấu là đã chỉnh sửa thủ công
+                      form.setValue("is_invoice_totals_manually_edited", true);
+                    }}
+                    onBlur={(e) => {
+                      // Xử lý khi người dùng hoàn tất nhập liệu
+                      let value = e.target.value.replace(/[^\d,]/g, '');
+
+                      // Xử lý dấu phẩy
+                      const commaCount = (value.match(/,/g) || []).length;
+                      if (commaCount > 1) {
+                        const parts = value.split(',');
+                        value = parts[0] + ',' + parts.slice(1).join('');
+                      }
+
+                      // Chuyển đổi sang số sử dụng parseVietnameseNumber
+                      const numValue = parseVietnameseNumber(value);
+
+                      // Định dạng lại giá trị hiển thị
+                      setTotalTaxDisplay(formatCurrencyInput(numValue));
+
+                      // Cập nhật giá trị tổng tiền thuế trong form
+                      form.setValue("total_tax", numValue);
+                      form.setValue("is_invoice_totals_manually_edited", true);
+
+                      // Không tự động cập nhật các ô khác hoặc phân bổ tỷ lệ
+                      // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả"
+                    }}
+                  />
+                )}
+              </div>
             </div>
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center max-w-full">
-              <span className="font-medium text-sm md:text-base">Tổng tiền thuế:</span>
-              <span className="text-sm md:text-base font-bold">
-                {formatCurrency(
-                  roundToThreeDecimals(
-                    form.getValues("details")?.reduce(
-                      (sum, detail) => {
-                        const totalBeforeTax = Number(detail.quantity || 0) * Number(detail.price_before_tax || 0)
-                        // Xử lý trường hợp KCT (Không chịu thuế)
-                        let taxRate = 0
-                        if (detail.tax_rate !== "KCT") {
-                          taxRate = Number(detail.tax_rate?.replace("%", "") || 0)
-                        }
-                        return sum + (totalBeforeTax * taxRate) / 100
-                      },
-                      0
-                    ) || 0
-                  )
+            {/* Tổng thanh toán - full width với border-t */}
+            <div className="pt-2">
+              <div className="flex-1">
+                <Label htmlFor="total_payment" className="text-sm font-bold text-gray-700 mb-1 block">Tổng thanh toán:</Label>
+                {isViewMode ? (
+                  <span className="text-sm font-bold">
+                    {formatCurrency(
+                      // Sử dụng trực tiếp giá trị total_after_tax từ API nếu có
+                      initialData && initialData.total_after_tax
+                        ? initialData.total_after_tax
+                        : form.getValues("details")?.reduce(
+                            (sum, detail) => sum + (Number(detail.total_after_tax || 0)),
+                            0
+                          ) || 0
+                    )}
+                  </span>
+                ) : (
+                  <Input
+                    id="total_payment"
+                    type="text"
+                    inputMode="decimal"
+                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300 font-bold"
+                    value={totalAfterTaxDisplay}
+                    onChange={(e) => {
+                      // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                      const rawValue = e.target.value;
+                      const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                      // Cập nhật display value với formatting
+                      e.target.value = formattedValue;
+                      setTotalAfterTaxDisplay(formattedValue);
+
+                      // Parse và lưu giá trị số nguyên vào form
+                      const numValue = parseIntegerNumber(formattedValue);
+                      form.setValue("total_after_tax", numValue);
+
+                      // Đánh dấu là đã chỉnh sửa thủ công
+                      form.setValue("is_invoice_totals_manually_edited", true);
+                    }}
+                    onBlur={(e) => {
+                      // Xử lý khi người dùng hoàn tất nhập liệu
+                      let value = e.target.value.replace(/[^\d,]/g, '');
+
+                      // Xử lý dấu phẩy
+                      const commaCount = (value.match(/,/g) || []).length;
+                      if (commaCount > 1) {
+                        const parts = value.split(',');
+                        value = parts[0] + ',' + parts.slice(1).join('');
+                      }
+
+                      // Chuyển đổi sang số sử dụng parseVietnameseNumber
+                      const numValue = parseVietnameseNumber(value);
+
+                      // Định dạng lại giá trị hiển thị
+                      setTotalAfterTaxDisplay(formatCurrencyInput(numValue));
+
+                      // Cập nhật giá trị tổng thanh toán trong form
+                      form.setValue("total_after_tax", numValue);
+                      form.setValue("is_invoice_totals_manually_edited", true);
+
+                      // Không tự động cập nhật các ô khác hoặc phân bổ tỷ lệ
+                      // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả"
+                    }}
+                  />
                 )}
-              </span>
-            </div>
-            <div className="flex flex-col sm:flex-row sm:justify-between sm:items-center text-sm md:text-base font-bold pt-2 md:pt-3 border-t max-w-full">
-              <span>Tổng thanh toán:</span>
-              <span>
-                {formatCurrency(
-                  roundToThreeDecimals(
-                    form.getValues("details")?.reduce(
-                      (sum, detail) => {
-                        const totalBeforeTax = Number(detail.quantity || 0) * Number(detail.price_before_tax || 0)
-                        // Xử lý trường hợp KCT (Không chịu thuế)
-                        let taxRate = 0
-                        if (detail.tax_rate !== "KCT") {
-                          taxRate = Number(detail.tax_rate?.replace("%", "") || 0)
-                        }
-                        const taxAmount = (totalBeforeTax * taxRate) / 100
-                        return sum + totalBeforeTax + taxAmount
-                      },
-                      0
-                    ) || 0
-                  )
-                )}
-              </span>
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Hàng 3: Chi tiết hàng hóa */}
+      {/* Hàng 2: Chi tiết hàng hóa */}
       <div className="max-w-full">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-2 gap-1 sm:gap-0 max-w-full">
-          <h3 className="text-base md:text-lg font-medium">Chi tiết hàng hóa</h3>
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center mb-1 gap-1 sm:gap-0 max-w-full">
+          <h3 className="text-sm md:text-base font-medium">Chi tiết hàng hóa</h3>
           {!isViewMode && (
-            <Button
-              type="button"
-              onClick={() => {
-                // Thêm dòng mới vào form
-                append({
-                  category: "HH",
-                  item_name: "",
-                  unit: "",
-                  quantity: 0,
-                  price_before_tax: 0,
-                  tax_rate: "10%",
-                  supplier_id: null,
-                  inventory_id: null,
-                  total_before_tax: 0,
-                  tax_amount: 0,
-                  total_after_tax: 0,
-                });
+            <div className="flex flex-col sm:flex-row gap-1">
+              <Button
+                type="button"
+                onClick={() => {
+                  // Thêm dòng mới vào form với thông tin người bán mặc định nếu có
+                  append({
+                    category: "HH",
+                    item_name: "",
+                    unit: "",
+                    quantity: 0,
+                    price_before_tax: 0,
+                    tax_rate: "0%",
+                    supplier_id: defaultSupplierId,
+                    inventory_id: null,
+                    seller_name: defaultSellerName,
+                    seller_tax_code: defaultSellerTaxCode,
+                    total_before_tax: undefined,
+                    tax_amount: undefined,
+                    total_after_tax: undefined,
+                    is_manually_edited: false,
+                  });
 
-                // Nếu đang ở chế độ chỉnh sửa, thiết lập chế độ chỉnh sửa cho dòng mới
-                if (mode === "edit" && initialData?.id) {
-                  // Đợi một chút để form cập nhật, sau đó thiết lập chế độ chỉnh sửa cho dòng mới
-                  setTimeout(() => {
-                    // Thiết lập chế độ chỉnh sửa cho dòng mới thêm vào
-                    setEditingRowIndex(fields.length);
-                  }, 100);
-                }
-              }}
-              className="px-2 md:px-3 h-7 md:h-8 text-xs md:text-sm w-full sm:w-auto"
-            >
-              <FaPlus className="mr-1 h-3 w-3" /> Thêm hàng hóa
-            </Button>
+                  // Nếu đang ở chế độ chỉnh sửa, thiết lập chế độ chỉnh sửa cho dòng mới
+                  if (mode === "edit" && initialData?.id) {
+                    // Đợi một chút để form cập nhật, sau đó thiết lập chế độ chỉnh sửa cho dòng mới
+                    setTimeout(() => {
+                      // Thiết lập chế độ chỉnh sửa cho dòng mới thêm vào
+                      setEditingRowIndex(fields.length);
+                    }, 100);
+                  }
+                }}
+                className="px-3 md:px-4 h-7 md:h-8 text-xs w-full sm:w-auto"
+              >
+                <FaPlus className="mr-1 h-2.5 w-2.5" /> Thêm hàng hóa
+              </Button>
+
+              {/* Nút tính toán thủ công */}
+              <Button
+                type="button"
+                variant="secondary"
+                onClick={handleManualCalculation}
+                disabled={isCalculating}
+                title="Tính toán lại tất cả tổng tiền từ số lượng và đơn giá (sẽ ghi đè các giá trị đã chỉnh sửa thủ công)"
+                className="px-3 md:px-4 h-7 md:h-8 text-xs w-full sm:w-auto bg-green-100 hover:bg-green-200 border-green-200 text-green-700"
+              >
+                {isCalculating ? (
+                  <>
+                    <svg className="animate-spin -ml-1 mr-1 h-2.5 w-2.5 text-green-700" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                      <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
+                      <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                    Đang tính...
+                  </>
+                ) : (
+                  <>
+                    <svg className="mr-1 h-2.5 w-2.5" viewBox="0 0 20 20" fill="currentColor">
+                      <path fillRule="evenodd" d="M4 2a1 1 0 011 1v2.101a7.002 7.002 0 0111.601 2.566 1 1 0 11-1.885.666A5.002 5.002 0 005.999 7H9a1 1 0 010 2H4a1 1 0 01-1-1V3a1 1 0 011-1zm.008 9.057a1 1 0 011.276.61A5.002 5.002 0 0014.001 13H11a1 1 0 110-2h5a1 1 0 011 1v5a1 1 0 11-2 0v-2.101a7.002 7.002 0 01-11.601-2.566 1 1 0 01.61-1.276z" clipRule="evenodd" />
+                    </svg>
+                    Tính toán lại tất cả
+                  </>
+                )}
+              </Button>
+
+              <div className="flex flex-col sm:flex-row gap-1">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setIsOcrModalOpen(true)}
+                  className="px-3 md:px-4 h-7 md:h-8 text-xs w-full sm:w-auto"
+                >
+                  <svg className="mr-1 h-2.5 w-2.5" viewBox="0 0 20 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+                    <path d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"/>
+                  </svg>
+                  Trích xuất từ PDF
+                </Button>
+
+                {/* Nút xem kết quả OCR chung cho toàn bộ hóa đơn */}
+                {fields.some(field => form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`)) && (
+                  <OcrResultViewer
+                    ocrResult={getOriginalOcrResult(
+                      fields.find(field => form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`))
+                        ? form.getValues(`details.${fields.indexOf(fields.find(field =>
+                            form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`)) || fields[0])}.ocrTaskId`) || ""
+                        : ""
+                    )}
+                    buttonVariant="outline"
+                    buttonSize="sm"
+                    buttonLabel="Xem kết quả OCR"
+                    buttonClassName="px-3 md:px-4 h-7 md:h-8 text-xs w-full sm:w-auto bg-blue-100 hover:bg-blue-200 border-blue-200 text-blue-700"
+                  />
+                )}
+              </div>
+            </div>
           )}
         </div>
 
-        <div className="w-full border rounded-sm max-w-full overflow-hidden relative">
+        <div className="w-full border rounded-sm max-w-full relative" style={{ overflow: 'visible' }}>
           <ScrollArea className="w-full h-[250px] md:h-[300px] overflow-x-auto">
-            <div className="relative w-full min-w-[800px]">
-            <Table className="w-full min-w-[800px]">
+            <div className="relative w-full min-w-[800px]" style={{ overflow: 'visible' }}>
+            <Table className="w-full min-w-[800px]" style={{ overflow: 'visible' }}>
               <TableHeader className="bg-destructive rounded-t-sm sticky top-0 z-10">
                 <TableRow className="hover:bg-transparent">
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg rounded-tl-sm w-[6%] min-w-[60px]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm rounded-tl-sm w-[4%] min-w-[40px]">
                     Loại
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[25%] min-w-[120px]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm w-[25%] min-w-[120px]">
                     Tên hàng
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[6%]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm w-[6%]">
                     Đơn vị
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[6%] min-w-[80px]">
-                    Số lượng
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm w-[5%] min-w-[60px]">
+                    SL
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg hidden md:table-cell w-[8%] min-w-[80px]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm hidden md:table-cell w-[10%] min-w-[100px]">
                     Đơn giá
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg hidden md:table-cell w-[8%]">
-                    Thuế suất
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm hidden md:table-cell w-[6%] min-w-[60px]">
+                    Thuế
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[8%] min-w-[80px]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm w-[8%] min-w-[80px]">
                     Thành tiền
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg w-[8%] min-w-[80px]">
+                  <TableHead className="text-white font-bold text-center text-xs md:text-sm w-[8%] min-w-[80px]">
                     Sau thuế
                   </TableHead>
-                  <TableHead className="text-white font-bold text-center text-sm md:text-lg hidden sm:table-cell w-[20%] min-w-[120px]">
-                    Người bán
-                  </TableHead>
                   {!isViewMode && (
-                    <TableHead className="text-white font-bold text-center text-sm md:text-lg rounded-tr-sm w-[6%] min-w-[60px]">
+                    <TableHead className="text-white font-bold text-center text-xs md:text-sm rounded-tr-sm w-[6%] min-w-[60px]">
                       Thao tác
                     </TableHead>
                   )}
                 </TableRow>
               </TableHeader>
-              <TableBody>
+              <TableBody style={{ overflow: 'visible' }}>
                 {currentItems.map((field, index) => {
                   const actualIndex = indexOfFirstItem + index;
                   return (
-                    <TableRow key={field.id} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"}>
+                    <TableRow key={field.id} className={index % 2 === 0 ? "bg-white" : "bg-gray-50"} style={{ overflow: 'visible' }}>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-center text-sm md:text-lg">
                         <Controller
                           name={`details.${actualIndex}.category`}
@@ -1180,85 +2349,152 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                 <SelectValue placeholder="Loại" />
                               </SelectTrigger>
                               <SelectContent>
-                                <SelectItem value="HH" className="text-sm">Hàng hóa</SelectItem>
-                                <SelectItem value="CP" className="text-sm">Chi phí</SelectItem>
+                                <SelectItem value="HH" className="text-sm">HH</SelectItem>
+                                <SelectItem value="CP" className="text-sm">CP</SelectItem>
                               </SelectContent>
                             </Select>
                           )}
                         />
                       </TableCell>
-                      <TableCell className="px-1 md:px-2 py-2 md:py-3 text-sm md:text-base">
-                        <div className="flex flex-col md:space-y-2">
-                          <div className="flex space-x-1">
-                            <div className="w-full flex-1">
-                              <div className="flex flex-col">
-                                <div className="flex space-x-2">
-                                  <div className="flex-1">
-                                    <Controller
-                                      name={`details.${actualIndex}.inventory_id`}
-                                      control={form.control}
-                                      render={({ field }) => {
-                                        // Chuyển đổi danh sách hàng hóa thành options cho Combobox
-                                        const inventoryOptions = inventoryItems.map(item => ({
-                                          label: item.item_name,
-                                          value: item.id.toString(),
-                                          description: `Loại: ${item.category === 'HH' ? 'Hàng hóa' : 'Chi phí'}`
-                                        }))
+                      <TableCell className="px-1 md:px-2 py-2 md:py-3 text-sm md:text-base" style={{ overflow: 'visible' }}>
+                        <div className="flex flex-col md:space-y-2" style={{ overflow: 'visible' }}>
+                          <div className="flex space-x-1" style={{ overflow: 'visible' }}>
+                            <div className="w-full flex-1" style={{ overflow: 'visible' }}>
+                              <div className="flex flex-col" style={{ overflow: 'visible' }}>
+                                <div className="flex space-x-2" style={{ overflow: 'visible' }}>
+                                  <div className="flex-1" style={{ overflow: 'visible' }}>
+                                    <div className="relative w-full" style={{ position: 'relative' }}>
+                                      {/* Import FlatInput từ components/ui/flat-input */}
+                                      <Input
+                                        type="text"
+                                        placeholder="Nhập tên hàng hóa"
+                                        value={form.getValues(`details.${actualIndex}.item_name`) || ""}
+                                        disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
+                                        className="h-10 text-sm w-full px-3 rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                        ref={(el) => {
+                                          inputRefs.current[actualIndex] = el;
+                                        }}
+                                        onChange={(e) => {
+                                          const value = e.target.value;
+                                          console.log(`Input onChange called with value:`, value);
+                                          // Cập nhật giá trị vào form
+                                          form.setValue(`details.${actualIndex}.item_name`, value);
 
-                                        // Xác định giá trị hiện tại (ID hoặc tên hàng hóa)
-                                        // Đối với chi phí, luôn sử dụng tên hàng hóa thay vì ID
-                                        const category = form.getValues(`details.${actualIndex}.category`);
-                                        const currentValue = (category === 'CP' || !field.value)
-                                          ? form.getValues(`details.${actualIndex}.item_name`) || ""
-                                          : field.value.toString()
+                                          // Nếu có hàng hóa trùng tên, tự động gán inventory_id
+                                          const matchedByName = inventoryItems.find(
+                                            item => item.item_name.toLowerCase() === value.toLowerCase()
+                                          );
 
-                                        console.log(`Combobox current value for row ${actualIndex}:`, currentValue, 'item_name:', form.getValues(`details.${actualIndex}.item_name`))
+                                          if (matchedByName) {
+                                            console.log(`Matched existing inventory item by name:`, matchedByName);
+                                            // Nếu tìm thấy hàng hóa theo tên, sử dụng thông tin của hàng hóa đó
+                                            form.setValue(`details.${actualIndex}.inventory_id`, matchedByName.id);
+                                            form.setValue(`details.${actualIndex}.unit`, matchedByName.unit);
+                                            form.setValue(`details.${actualIndex}.category`, matchedByName.category);
+                                            // Đóng dropdown khi tìm thấy kết quả chính xác
 
-                                        return (
-                                          <Combobox
-                                            options={inventoryOptions}
-                                            value={currentValue}
-                                            onChange={(value) => {
-                                              console.log(`Combobox onChange called with value:`, value);
-                                              handleInventoryChange(value, actualIndex);
-                                            }}
-                                            onInputChange={(value) => {
-                                              console.log(`Combobox onInputChange called with value:`, value);
-                                              handleInventoryInputChange(value, actualIndex);
-                                              // Khi người dùng nhập trực tiếp, cập nhật luôn vào item_name
-                                              form.setValue(`details.${actualIndex}.item_name`, value);
-                                            }}
-                                            placeholder="Chọn hoặc nhập tên hàng hóa"
-                                            emptyMessage="Không tìm thấy hàng hóa. Nhập tên để tạo mới."
-                                            allowCustomValue={true}
-                                            disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
-                                            triggerClassName="h-10 text-sm"
-                                          />
-                                        )
-                                      }}
-                                    />
+                                            // Ẩn dropdown khi có kết quả trùng khớp chính xác
+                                            const input = document.activeElement as HTMLElement;
+                                            if (input) {
+                                              input.blur();
+                                            }
+                                          } else {
+                                            // Nếu không tìm thấy, đặt inventory_id = null
+                                            form.setValue(`details.${actualIndex}.inventory_id`, null);
+                                          }
+
+                                          handleDetailFieldChange(actualIndex);
+                                        }}
+
+                                        onBlur={() => {
+                                          // Ẩn dropdown sau một khoảng thời gian ngắn để cho phép click vào dropdown
+                                          setTimeout(() => {
+                                            // Kiểm tra lại một lần nữa xem có hàng hóa trùng khớp không
+                                            const currentValue = form.getValues(`details.${actualIndex}.item_name`) || "";
+                                            const exactMatch = inventoryItems.find(
+                                              item => item.item_name.toLowerCase() === currentValue.toLowerCase()
+                                            );
+
+                                            if (exactMatch) {
+                                              // Nếu có kết quả trùng khớp chính xác, tự động chọn
+                                              form.setValue(`details.${actualIndex}.inventory_id`, exactMatch.id);
+                                              form.setValue(`details.${actualIndex}.item_name`, exactMatch.item_name);
+                                              form.setValue(`details.${actualIndex}.unit`, exactMatch.unit);
+                                              form.setValue(`details.${actualIndex}.category`, exactMatch.category);
+                                              handleDetailFieldChange(actualIndex);
+                                            }
+                                          }, 200);
+                                        }}
+                                      />
+
+                                      {/* Dropdown gợi ý hàng hóa tương tự */}
+                                      {form.getValues(`details.${actualIndex}.item_name`) &&
+                                        !isViewMode &&
+                                        (mode !== "edit" || editingRowIndex === actualIndex) &&
+                                        // Chỉ hiển thị dropdown khi không có kết quả trùng khớp chính xác
+                                        !inventoryItems.some(item =>
+                                          item.item_name.toLowerCase() === (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                        ) &&
+                                        inventoryItems.filter(item =>
+                                          item.item_name.toLowerCase().includes(
+                                            (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                          )
+                                        ).length > 0 && (
+                                        <DropdownPortal
+                                          targetRef={{ current: inputRefs.current[actualIndex] }}
+                                          isOpen={true}
+                                          onClose={closeDropdown}
+                                        >
+                                          {inventoryItems
+                                            .filter(item =>
+                                              item.item_name.toLowerCase().includes(
+                                                (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                              )
+                                            )
+                                            .slice(0, 10) // Hiển thị tối đa 10 gợi ý
+                                            .map(item => (
+                                              <div
+                                                key={item.id}
+                                                className="px-3 py-2 cursor-pointer hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
+                                                onMouseDown={(e) => {
+                                                  // Ngăn sự kiện mousedown lan truyền
+                                                  e.stopPropagation();
+
+                                                  // Chỉ ngăn sự kiện mặc định nếu là click chuột trái
+                                                  // để cho phép cuộn chuột hoạt động
+                                                  if (e.button === 0) { // 0 là chuột trái
+                                                    e.preventDefault();
+
+                                                    // Khi người dùng chọn một hàng hóa từ dropdown
+                                                    form.setValue(`details.${actualIndex}.inventory_id`, item.id);
+                                                    form.setValue(`details.${actualIndex}.item_name`, item.item_name);
+                                                    form.setValue(`details.${actualIndex}.unit`, item.unit);
+                                                    form.setValue(`details.${actualIndex}.category`, item.category);
+                                                    handleDetailFieldChange(actualIndex);
+
+                                                    // Đóng dropdown sau khi chọn
+                                                    closeDropdown();
+
+                                                    // Focus vào input sau khi chọn
+                                                    setTimeout(() => {
+                                                      if (inputRefs.current[actualIndex]) {
+                                                        inputRefs.current[actualIndex]?.focus();
+                                                      }
+                                                    }, 10);
+                                                  }
+                                                }}
+                                              >
+                                                <div className="text-sm font-medium">{item.item_name}</div>
+                                                <div className="text-xs text-gray-500">
+                                                  {item.category === 'HH' ? 'Hàng hóa' : 'Chi phí'} | Đơn vị: {item.unit}
+                                                </div>
+                                              </div>
+                                            ))}
+                                        </DropdownPortal>
+                                      )}
+                                    </div>
                                   </div>
-                                  {!isViewMode && (mode !== "edit" || editingRowIndex === actualIndex) && (
-                                    <Button
-                                      type="button"
-                                      variant="outline"
-                                      size="icon"
-                                      className="h-10 w-10 flex-shrink-0"
-                                      onClick={() => {
-                                        setCurrentDetailIndex(actualIndex);
-                                        // Reset form với các giá trị mặc định
-                                        inventoryForm.reset({
-                                          item_name: "",
-                                          unit: "",
-                                          quantity: 0,
-                                          category: "HH"
-                                        });
-                                        setIsInventoryModalOpen(true);
-                                      }}
-                                    >
-                                      <FaPlusCircle className="h-4 w-4" />
-                                    </Button>
-                                  )}
+
                                 </div>
                                 <Input
                                   type="hidden"
@@ -1276,14 +2512,16 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                         </div>
                       </TableCell>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-center text-sm md:text-base">
-                        <Controller
-                          name={`details.${actualIndex}.unit`}
-                          control={form.control}
-                          render={({ field }) => (
-                            <span className="text-sm md:text-base">
-                              {field.value || ""}
-                            </span>
-                          )}
+                        <Input
+                          type="text"
+                          placeholder="Đơn vị"
+                          defaultValue={form.getValues(`details.${actualIndex}.unit`) || ""}
+                          disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
+                          className="h-10 text-sm w-full px-3 rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                          onChange={(e) => {
+                            form.setValue(`details.${actualIndex}.unit`, e.target.value);
+                            handleDetailFieldChange(actualIndex);
+                          }}
                         />
                       </TableCell>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-sm md:text-base">
@@ -1291,73 +2529,28 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                         <Input
                           type="text"
                           inputMode="decimal"
-                          defaultValue={form.getValues(`details.${actualIndex}.quantity`) === 0 ? "" : form.getValues(`details.${actualIndex}.quantity`)}
+                          defaultValue={(() => {
+                            const value = form.getValues(`details.${actualIndex}.quantity`);
+                            return (value === 0 || value === null || value === undefined) ? "" : formatVietnameseNumber(value);
+                          })()}
                           disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
-                          className={`h-10 text-sm w-full px-3 ${isSubmitted && form.formState.errors.details?.[actualIndex]?.quantity ? "border-red-500" : ""}`}
+                          className={`h-10 text-sm w-full px-3 rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300 ${isSubmitted && form.formState.errors.details?.[actualIndex]?.quantity ? "border-red-500" : ""}`}
                           onChange={(e) => {
-                            // Chỉ cho phép nhập số và dấu chấm
-                            let value = e.target.value;
-
-                            // Loại bỏ các ký tự không phải số hoặc dấu chấm
-                            value = value.replace(/[^0-9.]/g, "");
-
-                            // Đếm số dấu chấm trong chuỗi
-                            const dotCount = (value.match(/\./g) || []).length;
-
-                            if (dotCount > 1) {
-                              // Nếu có nhiều hơn 1 dấu chấm, chỉ giữ lại dấu chấm đầu tiên
-                              const parts = value.split('.');
-                              value = parts[0] + '.' + parts.slice(1).join('');
-                            }
-
-                            // Cập nhật giá trị vào input
-                            e.target.value = value;
-
-                            // Cập nhật giá trị vào form
-                            if (value === "" || value === ".") {
-                              form.setValue(`details.${actualIndex}.quantity`, 0);
-                            } else {
-                              try {
-                                // Lưu giá trị chuỗi vào form để hiển thị
-                                const numValue = parseFloat(value);
-                                if (!isNaN(numValue)) {
-                                  form.setValue(`details.${actualIndex}.quantity`, numValue);
-                                } else {
-                                  form.setValue(`details.${actualIndex}.quantity`, 0);
-                                }
-                              } catch (error) {
-                                console.error("Error parsing quantity:", error);
-                                form.setValue(`details.${actualIndex}.quantity`, 0);
-                              }
-                            }
-
-                            // Tính toán tổng tiền
-                            calculateDetailTotals(actualIndex);
-                            handleDetailFieldChange(actualIndex);
+                            handleVietnameseNumberInput(e, (value) => {
+                              form.setValue(`details.${actualIndex}.quantity`, value);
+                              handleDetailFieldChange(actualIndex);
+                            }, 3);
                           }}
                           onBlur={(e) => {
-                            // Khi rời khỏi trường nhập liệu, đảm bảo giá trị là số hợp lệ
                             const value = e.target.value;
-                            if (value === "" || value === ".") {
-                              e.target.value = "0";
+                            if (value === "" || value === ",") {
+                              e.target.value = "";
                               form.setValue(`details.${actualIndex}.quantity`, 0);
                             } else {
-                              try {
-                                // Chuyển đổi thành số khi rời khỏi trường nhập liệu
-                                const numValue = parseFloat(value) || 0;
-                                form.setValue(`details.${actualIndex}.quantity`, numValue);
-
-                                // Nếu là số nguyên, hiển thị không có phần thập phân
-                                if (Number.isInteger(numValue)) {
-                                  e.target.value = numValue.toString();
-                                }
-                              } catch (error) {
-                                console.error("Error parsing quantity on blur:", error);
-                                e.target.value = "0";
-                                form.setValue(`details.${actualIndex}.quantity`, 0);
-                              }
+                              const numValue = parseVietnameseNumber(value);
+                              form.setValue(`details.${actualIndex}.quantity`, numValue);
+                              e.target.value = formatVietnameseNumber(numValue);
                             }
-                            calculateDetailTotals(actualIndex);
                           }}
                         />
                       </TableCell>
@@ -1365,73 +2558,33 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                         <Input
                           type="text"
                           inputMode="decimal"
-                          defaultValue={form.getValues(`details.${actualIndex}.price_before_tax`) === 0 ? "" : form.getValues(`details.${actualIndex}.price_before_tax`)}
+                          defaultValue={(() => {
+                            const value = form.getValues(`details.${actualIndex}.price_before_tax`);
+                            return (value === 0 || value === null || value === undefined) ? "" : formatVietnameseNumber(value);
+                          })()}
+                          // Sử dụng formatPrice để hiển thị đơn giá với số thập phân
                           disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
-                          className={`h-10 text-sm w-full px-3 ${isSubmitted && form.formState.errors.details?.[actualIndex]?.price_before_tax ? "border-red-500" : ""}`}
+                          className={`h-10 text-sm w-full px-3 rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300 ${isSubmitted && form.formState.errors.details?.[actualIndex]?.price_before_tax ? "border-red-500" : ""}`}
                           onChange={(e) => {
-                            // Chỉ cho phép nhập số và dấu chấm
-                            let value = e.target.value;
-
-                            // Loại bỏ các ký tự không phải số hoặc dấu chấm
-                            value = value.replace(/[^0-9.]/g, "");
-
-                            // Đếm số dấu chấm trong chuỗi
-                            const dotCount = (value.match(/\./g) || []).length;
-
-                            if (dotCount > 1) {
-                              // Nếu có nhiều hơn 1 dấu chấm, chỉ giữ lại dấu chấm đầu tiên
-                              const parts = value.split('.');
-                              value = parts[0] + '.' + parts.slice(1).join('');
-                            }
-
-                            // Cập nhật giá trị vào input
-                            e.target.value = value;
-
-                            // Cập nhật giá trị vào form
-                            if (value === "" || value === ".") {
-                              form.setValue(`details.${actualIndex}.price_before_tax`, 0);
-                            } else {
-                              try {
-                                // Lưu giá trị chuỗi vào form để hiển thị
-                                const numValue = parseFloat(value);
-                                if (!isNaN(numValue)) {
-                                  form.setValue(`details.${actualIndex}.price_before_tax`, numValue);
-                                } else {
-                                  form.setValue(`details.${actualIndex}.price_before_tax`, 0);
-                                }
-                              } catch (error) {
-                                console.error("Error parsing price:", error);
-                                form.setValue(`details.${actualIndex}.price_before_tax`, 0);
-                              }
-                            }
-
-                            // Tính toán tổng tiền
-                            calculateDetailTotals(actualIndex);
-                            handleDetailFieldChange(actualIndex);
+                            handleVietnameseNumberInput(e, (value) => {
+                              // Làm tròn đến 3 chữ số thập phân cho đơn giá
+                              const roundedValue = Math.round(value * 1000) / 1000;
+                              form.setValue(`details.${actualIndex}.price_before_tax`, roundedValue);
+                              handleDetailFieldChange(actualIndex);
+                            }, 3);
                           }}
                           onBlur={(e) => {
-                            // Khi rời khỏi trường nhập liệu, đảm bảo giá trị là số hợp lệ
                             const value = e.target.value;
-                            if (value === "" || value === ".") {
-                              e.target.value = "0";
+                            if (value === "" || value === ",") {
+                              e.target.value = "";
                               form.setValue(`details.${actualIndex}.price_before_tax`, 0);
                             } else {
-                              try {
-                                // Chuyển đổi thành số khi rời khỏi trường nhập liệu
-                                const numValue = parseFloat(value) || 0;
-                                form.setValue(`details.${actualIndex}.price_before_tax`, numValue);
-
-                                // Nếu là số nguyên, hiển thị không có phần thập phân
-                                if (Number.isInteger(numValue)) {
-                                  e.target.value = numValue.toString();
-                                }
-                              } catch (error) {
-                                console.error("Error parsing price on blur:", error);
-                                e.target.value = "0";
-                                form.setValue(`details.${actualIndex}.price_before_tax`, 0);
-                              }
+                              const numValue = parseVietnameseNumber(value);
+                              // Làm tròn đến 3 chữ số thập phân cho đơn giá
+                              const roundedValue = Math.round(numValue * 1000) / 1000;
+                              form.setValue(`details.${actualIndex}.price_before_tax`, roundedValue);
+                              e.target.value = formatVietnameseNumber(roundedValue);
                             }
-                            calculateDetailTotals(actualIndex);
                           }}
                         />
                       </TableCell>
@@ -1444,12 +2597,12 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                               value={field.value}
                               onValueChange={(value) => {
                                 field.onChange(value)
-                                calculateDetailTotals(actualIndex)
+                                // Chỉ clear errors, không tính toán tự động
                                 handleDetailFieldChange(actualIndex)
                               }}
                               disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
                             >
-                              <SelectTrigger className="w-full h-10 text-sm px-3">
+                              <SelectTrigger className="w-full h-10 text-sm px-3 rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300">
                                 <SelectValue placeholder="Thuế" />
                               </SelectTrigger>
                               <SelectContent>
@@ -1464,85 +2617,132 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                         />
                       </TableCell>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-right font-medium">
-                        <span className="text-sm md:text-base">
-                          {formatCurrency(
-                            roundToThreeDecimals(
-                              (form.getValues(`details.${actualIndex}.quantity`) || 0) *
-                              (form.getValues(`details.${actualIndex}.price_before_tax`) || 0)
-                            )
-                          )}
-                        </span>
+                        {isViewMode || (mode === "edit" && editingRowIndex !== actualIndex) ? (
+                          <span className="text-sm md:text-base">
+                            {formatCurrency(
+                              form.getValues(`details.${actualIndex}.total_before_tax`) || 0
+                            )}
+                          </span>
+                        ) : (
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={(() => {
+                              const value = form.watch(`details.${actualIndex}.total_before_tax`);
+                              return (value === 0 || value === null || value === undefined) ? "" : formatVietnameseNumber(value);
+                            })()}
+                            className="h-10 text-sm w-full px-3 text-right rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                            onChange={(e) => {
+                              // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                              const rawValue = e.target.value;
+                              const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                              // Cập nhật display value
+                              e.target.value = formattedValue;
+
+                              // Parse và set giá trị số nguyên
+                              const numValue = parseIntegerNumber(formattedValue);
+                              form.setValue(`details.${actualIndex}.total_before_tax`, numValue);
+                              // Đánh dấu đã chỉnh sửa thủ công
+                              form.setValue(`details.${actualIndex}.is_manually_edited`, true);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === "" || value === ".") {
+                                e.target.value = "";
+                                form.setValue(`details.${actualIndex}.total_before_tax`, 0);
+                              } else {
+                                const numValue = parseIntegerNumber(value);
+                                form.setValue(`details.${actualIndex}.total_before_tax`, numValue);
+                                e.target.value = formatVietnameseNumber(numValue);
+
+                                // Khi đã chỉnh sửa thủ công tổng tiền trước thuế,
+                                // cần tính lại thuế và tổng tiền sau thuế
+                                const detail = form.getValues(`details.${actualIndex}`);
+                                let taxRate = 0;
+                                if (detail.tax_rate !== "KCT") {
+                                  taxRate = Number(detail.tax_rate?.replace("%", "") || 0);
+                                }
+                                const taxAmount = Math.round((numValue * taxRate) / 100);
+                                const totalAfterTax = numValue + taxAmount;
+
+                                form.setValue(`details.${actualIndex}.tax_amount`, taxAmount);
+                                form.setValue(`details.${actualIndex}.total_after_tax`, totalAfterTax);
+                              }
+                            }}
+                          />
+                        )}
                       </TableCell>
                       <TableCell className="px-1 md:px-2 py-2 md:py-3 text-right font-medium">
-                        <span className="text-sm md:text-base">
-                          {formatCurrency(
-                            roundToThreeDecimals(
+                        {isViewMode || (mode === "edit" && editingRowIndex !== actualIndex) ? (
+                          <span className="text-sm md:text-base">
+                            {formatCurrency(
                               form.getValues(`details.${actualIndex}.total_after_tax`) || 0
-                            )
-                          )}
-                        </span>
-                      </TableCell>
-                      <TableCell className="px-1 md:px-2 py-2 md:py-3">
-                        <div className="flex flex-col space-y-1 md:space-y-2">
-                          <div className="flex space-x-2">
-                            <div className="flex-1">
-                              <Controller
-                                name={`details.${actualIndex}.supplier_id`}
-                                control={form.control}
-                                render={({ field }) => {
-                                  // Chuyển đổi danh sách người bán thành options cho Combobox
-                                  const supplierOptions = suppliers.map(supplier => ({
-                                    label: supplier.tax_code ? `${supplier.name} (MST: ${supplier.tax_code})` : supplier.name,
-                                    value: supplier.id.toString(),
-                                    description: undefined
-                                  }))
-
-                                  // Xác định giá trị hiện tại (ID hoặc tên nhà cung cấp)
-                                  const currentValue = field.value
-                                    ? field.value.toString()
-                                    : form.getValues(`details.${actualIndex}.seller_name`) || ""
-
-                                  return (
-                                    <Combobox
-                                      options={supplierOptions}
-                                      value={currentValue}
-                                      onChange={(value) => handleSupplierChange(value, actualIndex)}
-                                      onInputChange={(value) => handleSupplierInputChange(value, actualIndex)}
-                                      placeholder="Chọn hoặc nhập tên người bán"
-                                      emptyMessage="Không tìm thấy người bán. Nhập tên để tạo mới."
-                                      allowCustomValue={true}
-                                      disabled={isViewMode || (mode === "edit" && editingRowIndex !== actualIndex)}
-                                      triggerClassName="h-10 text-sm"
-                                    />
-                                  )
-                                }}
-                              />
-                            </div>
-                            {!isViewMode && (mode !== "edit" || editingRowIndex === actualIndex) && (
-                              <Button
-                                type="button"
-                                variant="outline"
-                                size="icon"
-                                className="h-10 w-10 flex-shrink-0"
-                                onClick={() => {
-                                  setCurrentDetailIndex(actualIndex);
-                                  supplierForm.reset({
-                                    name: "",
-                                    tax_code: "",
-                                    address: "",
-                                    phone: "",
-                                    email: "",
-                                  });
-                                  setIsSupplierModalOpen(true);
-                                }}
-                              >
-                                <FaPlusCircle className="h-4 w-4" />
-                              </Button>
                             )}
-                          </div>
-                          {/* Đã bỏ hiển thị MST ở đây vì đã hiển thị trong dropdown */}
-                        </div>
+                          </span>
+                        ) : (
+                          <Input
+                            type="text"
+                            inputMode="decimal"
+                            value={(() => {
+                              const value = form.watch(`details.${actualIndex}.total_after_tax`);
+                              return (value === 0 || value === null || value === undefined) ? "" : formatVietnameseNumber(value);
+                            })()}
+                            className="h-10 text-sm w-full px-3 text-right rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                            onChange={(e) => {
+                              // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                              const rawValue = e.target.value;
+                              const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                              // Cập nhật display value
+                              e.target.value = formattedValue;
+
+                              // Parse và set giá trị số nguyên
+                              const numValue = parseIntegerNumber(formattedValue);
+                              form.setValue(`details.${actualIndex}.total_after_tax`, numValue);
+                              // Đánh dấu đã chỉnh sửa thủ công
+                              form.setValue(`details.${actualIndex}.is_manually_edited`, true);
+                            }}
+                            onBlur={(e) => {
+                              const value = e.target.value;
+                              if (value === "" || value === ".") {
+                                // Giữ trường trống thay vì điền "0"
+                                e.target.value = "";
+                                form.setValue(`details.${actualIndex}.total_after_tax`, 0);
+                              } else {
+                                const numValue = parseIntegerNumber(value);
+                                form.setValue(`details.${actualIndex}.total_after_tax`, numValue);
+                                e.target.value = formatVietnameseNumber(numValue);
+
+                                // Đánh dấu đã chỉnh sửa thủ công
+                                form.setValue(`details.${actualIndex}.is_manually_edited`, true);
+
+                                // Khi thay đổi giá trị sau thuế, cập nhật ngược lại các giá trị khác
+                                const detail = form.getValues(`details.${actualIndex}`);
+                                let taxRate = 0;
+                                if (detail.tax_rate !== "KCT") {
+                                  taxRate = Number(detail.tax_rate?.replace("%", "") || 0);
+                                }
+
+                                // Nếu thuế suất là 0, toàn bộ số tiền là tổng trước thuế
+                                if (taxRate === 0) {
+                                  form.setValue(`details.${actualIndex}.total_before_tax`, numValue);
+                                  form.setValue(`details.${actualIndex}.tax_amount`, 0);
+                                } else {
+                                  // Tính ngược lại tổng tiền trước thuế: total_before_tax = total_after_tax / (1 + taxRate/100)
+                                  const totalBeforeTax = Math.round(numValue / (1 + taxRate/100));
+                                  form.setValue(`details.${actualIndex}.total_before_tax`, totalBeforeTax);
+
+                                  // Tính lại thuế = tổng sau thuế - tổng trước thuế
+                                  const taxAmount = numValue - totalBeforeTax;
+                                  form.setValue(`details.${actualIndex}.tax_amount`, taxAmount);
+                                }
+                              }
+                            }}
+                          />
+                        )}
                       </TableCell>
+
                       {!isViewMode && (
                         <TableCell className="px-1 md:px-2 py-2 md:py-3 text-center">
                           <div className="flex gap-2 justify-center">
@@ -1554,9 +2754,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                 className="h-8 w-8 bg-green-100 hover:bg-green-200 border-green-200 text-green-700"
                                 onClick={() => {
                                   if (editingRowIndex === actualIndex) {
-                                    // Nếu đang chỉnh sửa hàng này, lưu thay đổi và tắt chế độ chỉnh sửa
+                                    // Nếu đang chỉnh sửa hàng này, lưu thay đổi (setEditingRowIndex(null) đã được gọi trong handleUpdateDetailInEditMode)
                                     handleUpdateDetailInEditMode(actualIndex);
-                                    setEditingRowIndex(null);
                                   } else {
                                     // Nếu chưa chỉnh sửa hàng này, bật chế độ chỉnh sửa
                                     setEditingRowIndex(actualIndex);
@@ -1581,10 +2780,31 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                 if (mode === "edit" && initialData?.id) {
                                   handleDeleteDetailInEditMode(actualIndex);
                                 } else {
+                                  // Xóa hàng hiện tại
                                   remove(actualIndex);
+
+                                  // Nếu đã xóa hàng cuối cùng, thêm một hàng mới trống
+                                  setTimeout(() => {
+                                    if (form.getValues("details")?.length === 0) {
+                                      append({
+                                        category: "HH",
+                                        item_name: "",
+                                        unit: "",
+                                        quantity: 0,
+                                        price_before_tax: 0,
+                                        tax_rate: "10%",
+                                        supplier_id: null,
+                                        is_manually_edited: false,
+                                        inventory_id: null,
+                                        total_before_tax: undefined,
+                                        tax_amount: undefined,
+                                        total_after_tax: undefined,
+                                        ocrTaskId: "",
+                                      });
+                                    }
+                                  }, 100);
                                 }
                               }}
-                              disabled={fields.length <= 1}
                             >
                               <FaTrash className="h-4 w-4" />
                             </Button>
@@ -1776,130 +2996,68 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
         </DialogContent>
       </Dialog>
 
-      {/* Modal thêm mới hàng hóa */}
-      <Dialog open={isInventoryModalOpen} onOpenChange={setIsInventoryModalOpen}>
+
+
+      {/* Modal tải lên tập tin PDF */}
+      <Dialog open={isOcrModalOpen} onOpenChange={setIsOcrModalOpen}>
         <DialogContent className="max-w-[90vw] sm:max-w-[500px] p-3 md:p-6">
           <DialogHeader>
-            <DialogTitle className="text-lg md:text-xl">Thêm hàng hóa mới</DialogTitle>
+            <DialogTitle className="text-lg md:text-xl">Trích xuất dữ liệu từ PDF</DialogTitle>
           </DialogHeader>
           <div className="space-y-4 md:space-y-8">
-            <div className="space-y-4 md:space-y-6">
-              <div>
-                <Label htmlFor="item_name" className="text-sm md:text-base mb-2 md:mb-3 block">Tên hàng hóa *</Label>
-                <Input
-                  id="item_name"
-                  {...inventoryForm.register("item_name")}
-                  className="h-10 md:h-12 text-sm md:text-base"
-                />
-                {inventoryForm.formState.errors.item_name && (
-                  <p className="text-red-500 text-xs md:text-sm mt-1">{inventoryForm.formState.errors.item_name.message}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="unit" className="text-sm md:text-base mb-2 md:mb-3 block">Đơn vị tính *</Label>
-                <Input
-                  id="unit"
-                  {...inventoryForm.register("unit")}
-                  className="h-10 md:h-12 text-sm md:text-base"
-                />
-                {inventoryForm.formState.errors.unit && (
-                  <p className="text-red-500 text-xs md:text-sm mt-1">{inventoryForm.formState.errors.unit.message}</p>
-                )}
-              </div>
-              <div>
-                <Label htmlFor="category" className="text-sm md:text-base mb-2 md:mb-3 block">Loại *</Label>
-                <Controller
-                  name="category"
-                  control={inventoryForm.control}
-                  render={({ field }) => (
-                    <Select
-                      value={field.value}
-                      onValueChange={(value) => {
-                        field.onChange(value);
-                        // Reset số lượng về 0 khi chuyển loại
-                        inventoryForm.setValue("quantity", 0);
-                      }}
-                    >
-                      <SelectTrigger className="h-10 md:h-12 text-sm md:text-base">
-                        <SelectValue placeholder="Chọn loại" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="HH">Hàng hóa</SelectItem>
-                        <SelectItem value="CP">Chi phí</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  )}
-                />
-                {inventoryForm.formState.errors.category && (
-                  <p className="text-red-500 text-xs md:text-sm mt-1">{inventoryForm.formState.errors.category.message}</p>
-                )}
-              </div>
-
-              {/* Hiển thị ô nhập số lượng khi loại là chi phí */}
-              {inventoryForm.watch("category") === "CP" && (
-                <div>
-                  <Label htmlFor="quantity" className="text-sm md:text-base mb-2 md:mb-3 block">Số lượng</Label>
-                  <Input
-                    id="quantity"
-                    type="text"
-                    inputMode="decimal"
-                    {...inventoryForm.register("quantity", {
-                      setValueAs: (value) => {
-                        if (value === "" || value === ".") return 0;
-                        return parseFloat(value) || 0;
-                      }
-                    })}
-                    className="h-10 md:h-12 text-sm md:text-base"
-                    onChange={(e) => {
-                      // Chỉ cho phép nhập số và dấu chấm
-                      let value = e.target.value;
-                      value = value.replace(/[^0-9.]/g, "");
-
-                      // Đếm số dấu chấm trong chuỗi
-                      const dotCount = (value.match(/\./g) || []).length;
-                      if (dotCount > 1) {
-                        const parts = value.split('.');
-                        value = parts[0] + '.' + parts.slice(1).join('');
-                      }
-
-                      e.target.value = value;
-                      inventoryForm.setValue("quantity", value === "" || value === "." ? 0 : parseFloat(value) || 0);
-                    }}
-                  />
+            {isPdfUploading ? (
+              <div className="space-y-4">
+                <div className="w-full bg-gray-200 rounded-full h-4">
+                  <div
+                    className="bg-blue-600 h-4 rounded-full transition-all duration-300"
+                    style={{ width: `${pdfUploadProgress}%` }}
+                  ></div>
                 </div>
-              )}
-            </div>
+                <p className="text-center text-sm md:text-base">
+                  {pdfUploadProgress < 30 ? "Đang tải lên tập tin..." :
+                   pdfUploadProgress < 60 ? "Đang xử lý OCR..." :
+                   pdfUploadProgress < 90 ? "Đang trích xuất dữ liệu..." :
+                   "Hoàn tất xử lý..."}
+                </p>
+              </div>
+            ) : (
+              <div className="space-y-4">
+                <div className="flex items-center justify-center w-full">
+                  <label htmlFor="pdf-upload" className="flex flex-col items-center justify-center w-full h-32 border-2 border-gray-300 border-dashed rounded-lg cursor-pointer bg-gray-50 hover:bg-gray-100">
+                    <div className="flex flex-col items-center justify-center pt-5 pb-6">
+                      <svg className="w-8 h-8 mb-4 text-gray-500" aria-hidden="true" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 20 16">
+                        <path stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2"/>
+                      </svg>
+                      <p className="mb-2 text-sm text-gray-500"><span className="font-semibold">Nhấp để tải lên</span> hoặc kéo thả tập tin</p>
+                      <p className="text-xs text-gray-500">PDF (Tối đa 10MB)</p>
+                    </div>
+                    <input
+                      id="pdf-upload"
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={(e) => {
+                        if (e.target.files && e.target.files[0]) {
+                          handlePdfUpload(e.target.files[0]);
+                        }
+                      }}
+                    />
+                  </label>
+                </div>
+                <p className="text-sm text-gray-500 text-center">
+                  Tải lên tập tin PDF hóa đơn để trích xuất thông tin hàng hóa và người bán.
+                </p>
+              </div>
+            )}
             <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 md:gap-4">
               <Button
                 type="button"
                 variant="outline"
                 className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
-                onClick={() => setIsInventoryModalOpen(false)}
+                onClick={() => setIsOcrModalOpen(false)}
+                disabled={isPdfUploading}
               >
-                Hủy
-              </Button>
-              <Button
-                type="button"
-                className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
-                disabled={loading}
-                onClick={() => {
-                  // Kiểm tra validation của form thêm hàng hóa
-                  inventoryForm.trigger().then(isValid => {
-                    if (isValid) {
-                      // Nếu hợp lệ, gọi hàm xử lý thêm hàng hóa
-                      handleAddInventory(inventoryForm.getValues());
-                    } else {
-                      // Hiển thị thông báo lỗi
-                      toast.error("Vui lòng kiểm tra lại thông tin", {
-                        description: "Có một số trường bắt buộc chưa được nhập",
-                        className: "text-lg font-medium",
-                        descriptionClassName: "text-base"
-                      });
-                    }
-                  });
-                }}
-              >
-                {loading ? "Đang xử lý..." : "Thêm hàng hóa"}
+                {isPdfUploading ? "Đang xử lý..." : "Hủy"}
               </Button>
             </DialogFooter>
           </div>

@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 import { format } from "date-fns";
 
 // Định nghĩa kiểu dữ liệu
@@ -61,9 +60,7 @@ export const getExpenseReport = async (searchParams?: Record<string, string>) =>
       });
     }
 
-    const response = await axios.get(`${API_URL}/reports/expenses?${params.toString()}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/reports/expenses?${params.toString()}`);
 
     return response.data;
   } catch (error) {

@@ -1,0 +1,29 @@
+# Ngăn tất cả các robot lập chỉ mục trang web
+User-agent: *
+Disallow: /
+Noindex: /
+
+# Ngăn Google lập chỉ mục trang web
+User-agent: Googlebot
+Disallow: /
+Noindex: /
+
+# Ngăn Bing lập chỉ mục trang web
+User-agent: Bingbot
+Disallow: /
+Noindex: /
+
+# Ngăn Yahoo lập chỉ mục trang web
+User-agent: Slurp
+Disallow: /
+Noindex: /
+
+# Ngăn Baidu lập chỉ mục trang web
+User-agent: Baiduspider
+Disallow: /
+Noindex: /
+
+# Ngăn Yandex lập chỉ mục trang web
+User-agent: YandexBot
+Disallow: /
+Noindex: /

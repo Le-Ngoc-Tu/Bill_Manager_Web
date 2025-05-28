@@ -1,11 +1,12 @@
 "use client"
 
-import { createContext, useContext, useEffect, useState, ReactNode } from "react";
+import { createContext, useContext, useEffect, useState, ReactNode, useRef } from "react";
 import { useRouter } from "next/navigation";
 import axios from "axios";
-
-// API URL từ biến môi trường
-const API_URL = process.env.NEXT_PUBLIC_BACKEND_URL || "http://localhost:7010/api";
+import apiClient, { API_URL, isTokenExpired } from "./api/config";
+import jwtDecode from "jwt-decode";
+import { TokenMonitor, DEFAULT_TOKEN_MONITOR_CONFIG, type TokenMonitorConfig } from "./token-monitor";
+import { toast } from "sonner";
 
 interface User {
   id: number;
@@ -16,6 +17,8 @@ interface User {
   avatar?: string;
   fullname?: string;
   role_name?: string;
+  permissions?: string[];
+  userDetailsLoaded?: boolean; // Thêm flag để biết đã tải thông tin chi tiết chưa
 }
 
 interface AuthContextType {
@@ -25,6 +28,7 @@ interface AuthContextType {
   loading: boolean;
   loginWithCredentials: (username: string, password: string) => Promise<any>;
   verifyCode: (username: string, uuid: string, code: string) => Promise<any>;
+  forceTokenRefresh: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextType | undefined>(undefined);
@@ -43,51 +47,63 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [loading, setLoading] = useState(true);
   const router = useRouter();
+  const tokenMonitorRef = useRef<TokenMonitor | null>(null);
 
-  // Thiết lập axios interceptor để thêm token vào header
-  useEffect(() => {
-    const accessToken = localStorage.getItem("accessToken");
-    if (accessToken) {
-      axios.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
+  // Initialize token monitor
+  const initializeTokenMonitor = () => {
+    if (tokenMonitorRef.current) {
+      tokenMonitorRef.current.stop();
     }
 
-    // Interceptor để xử lý token hết hạn
-    const interceptor = axios.interceptors.response.use(
-      (response) => response,
-      async (error) => {
-        const originalRequest = error.config;
-        if (error.response?.status === 401 && !originalRequest._retry) {
-          originalRequest._retry = true;
-          try {
-            const refreshToken = localStorage.getItem("refreshToken");
-            if (!refreshToken) throw new Error("No refresh token");
-
-            const response = await axios.post(`${API_URL}/auth/refresh-token`, {
-              refreshToken,
-            });
-
-            const { accessToken } = response.data;
-            localStorage.setItem("accessToken", accessToken);
-            axios.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
-            originalRequest.headers["Authorization"] = `Bearer ${accessToken}`;
-
-            return axios(originalRequest);
-          } catch (refreshError) {
-            // Nếu refresh token cũng hết hạn, đăng xuất người dùng
-            logout();
-            return Promise.reject(refreshError);
-          }
+    const config: TokenMonitorConfig = {
+      ...DEFAULT_TOKEN_MONITOR_CONFIG,
+      onTokenExpired: () => {
+        console.log("Token expired, logging out user");
+        toast.error("Phiên đăng nhập đã hết hạn", {
+          description: "Bạn sẽ được chuyển hướng đến trang đăng nhập",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
+        logout();
+      },
+      onTokenNearExpiry: async () => {
+        console.log("Token near expiry, attempting refresh");
+        try {
+          await forceTokenRefresh();
+          toast.success("Phiên đăng nhập đã được gia hạn", {
+            className: "text-lg font-medium"
+          });
+        } catch (error) {
+          console.error("Failed to refresh token:", error);
+          toast.error("Không thể gia hạn phiên đăng nhập", {
+            description: "Vui lòng đăng nhập lại",
+            className: "text-lg font-medium",
+            descriptionClassName: "text-base"
+          });
+          logout();
         }
-        return Promise.reject(error);
+      },
+      onTokenRefreshed: (newToken: string) => {
+        console.log("Token refreshed successfully");
+        localStorage.setItem("accessToken", newToken);
+      },
+      onError: (error: Error) => {
+        console.error("Token monitor error:", error);
+        toast.error("Lỗi kiểm tra phiên đăng nhập", {
+          description: error.message,
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
       }
-    );
-
-    return () => {
-      axios.interceptors.response.eject(interceptor);
     };
-  }, []);
+
+    tokenMonitorRef.current = new TokenMonitor(config);
+  };
 
   useEffect(() => {
+    // Initialize token monitor
+    initializeTokenMonitor();
+
     // Kiểm tra dữ liệu đăng nhập trong localStorage khi khởi động
     console.log("AuthProvider initialized, checking localStorage");
     try {
@@ -107,49 +123,99 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       console.error("Error checking localStorage:", error);
       setLoading(false);
     }
+
+    // Cleanup function
+    return () => {
+      if (tokenMonitorRef.current) {
+        tokenMonitorRef.current.stop();
+      }
+    };
   }, []);
 
-  // Kiểm tra token có hợp lệ không
+  // Start/stop token monitoring based on user authentication status
+  useEffect(() => {
+    if (user && tokenMonitorRef.current) {
+      console.log("Starting token monitor for authenticated user");
+      tokenMonitorRef.current.start();
+    } else if (!user && tokenMonitorRef.current) {
+      console.log("Stopping token monitor for unauthenticated user");
+      tokenMonitorRef.current.stop();
+    }
+  }, [user]);
+
+  // Kiểm tra token có hợp lệ không và tải thông tin chi tiết người dùng
   const validateToken = async () => {
     try {
       const accessToken = localStorage.getItem("accessToken");
+      const refreshToken = localStorage.getItem("refreshToken");
       const userData = localStorage.getItem("user");
-      if (!accessToken || !userData) {
+
+      if (!accessToken || !refreshToken || !userData) {
         setUser(null);
+        setLoading(false);
+        return;
+      }
+
+      // Kiểm tra cả accessToken và refreshToken
+      const isAccessTokenExpired = isTokenExpired(accessToken);
+      const isRefreshTokenExpired = isTokenExpired(refreshToken);
+
+      // Nếu refreshToken hết hạn, đăng xuất người dùng
+      if (isRefreshTokenExpired) {
+        console.log("Refresh token đã hết hạn, đăng xuất người dùng");
+
+        // Hiển thị thông báo cho người dùng
+        if (typeof window !== 'undefined') {
+          alert("Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        }
+
+        // Đăng xuất người dùng
+        logout();
         setLoading(false);
         return;
       }
 
       const parsedUser = JSON.parse(userData);
 
-      // Gọi API để kiểm tra token - sử dụng endpoint users/:id
-      await axios.get(`${API_URL}/users/${parsedUser.id}`, {
-        headers: { Authorization: `Bearer ${accessToken}` },
-      });
+      // Nếu chưa tải thông tin chi tiết người dùng, tải ngay bây giờ
+      if (!parsedUser.userDetailsLoaded) {
+        try {
+          // Gọi API để lấy thông tin chi tiết người dùng
+          const response = await apiClient.get(`/users/${parsedUser.id}`);
+
+          // Cập nhật thông tin người dùng với dữ liệu chi tiết
+          const userDetails = response.data.data || response.data;
+          const updatedUser = {
+            ...parsedUser,
+            avatar: userDetails.avatar,
+            fullname: userDetails.fullname,
+            email: userDetails.email || parsedUser.email,
+            role_name: userDetails.role_name,
+            permissions: userDetails.permissions,
+            userDetailsLoaded: true
+          };
+
+          // Cập nhật state và localStorage
+          setUser(updatedUser);
+          localStorage.setItem("user", JSON.stringify(updatedUser));
+        } catch (detailsError: any) {
+          console.error("Failed to fetch user details:", detailsError);
+
+          // Vẫn tiếp tục với thông tin cơ bản nếu không lấy được chi tiết
+          // apiClient sẽ tự động xử lý refresh token nếu cần
+        }
+      } else {
+        // Nếu đã tải thông tin chi tiết, sử dụng thông tin đã lưu
+        setUser(parsedUser);
+      }
 
       // Nếu không có lỗi, token vẫn hợp lệ
       setLoading(false);
-    } catch (error) {
+    } catch (error: any) {
       console.error("Token validation failed:", error);
-      // Thử refresh token
-      try {
-        const refreshToken = localStorage.getItem("refreshToken");
-        if (!refreshToken) throw new Error("No refresh token");
 
-        const response = await axios.post(`${API_URL}/auth/refresh-token`, {
-          refreshToken,
-        });
-
-        const { accessToken } = response.data;
-        localStorage.setItem("accessToken", accessToken);
-        axios.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
-      } catch (refreshError) {
-        // Nếu refresh token cũng hết hạn, đăng xuất người dùng
-        setUser(null);
-        localStorage.removeItem("accessToken");
-        localStorage.removeItem("refreshToken");
-        localStorage.removeItem("user");
-      }
+      // Xử lý lỗi không liên quan đến token
+      setUser(null);
       setLoading(false);
     }
   };
@@ -210,6 +276,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  // Force token refresh
+  const forceTokenRefresh = async (): Promise<void> => {
+    const refreshToken = localStorage.getItem("refreshToken");
+    if (!refreshToken) {
+      throw new Error("No refresh token available");
+    }
+
+    try {
+      const response = await axios.post(`${API_URL}/auth/refresh-token`, {
+        refreshToken,
+      });
+
+      const { accessToken } = response.data;
+      localStorage.setItem("accessToken", accessToken);
+
+      console.log("Token refreshed successfully");
+    } catch (error) {
+      console.error("Error refreshing token:", error);
+      throw error;
+    }
+  };
+
   // Xử lý đăng nhập thành công
   const handleSuccessfulLogin = (accessToken: string, refreshToken: string, userData: any) => {
     localStorage.setItem("accessToken", accessToken);
@@ -218,11 +306,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const userWithAuth = {
       ...userData,
       isAuthenticated: true,
+      userDetailsLoaded: false, // Đánh dấu rằng thông tin chi tiết chưa được tải
     };
 
     setUser(userWithAuth);
     localStorage.setItem("user", JSON.stringify(userWithAuth));
-    axios.defaults.headers.common["Authorization"] = `Bearer ${accessToken}`;
     router.push("/dashboard");
   };
 
@@ -244,18 +332,36 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Đăng xuất
   const logout = async () => {
     try {
+      // Stop token monitoring
+      if (tokenMonitorRef.current) {
+        tokenMonitorRef.current.stop();
+      }
+
       const refreshToken = localStorage.getItem("refreshToken");
       if (refreshToken) {
-        await axios.post(`${API_URL}/auth/logout`, { refreshToken });
+        try {
+          await apiClient.post(`/auth/logout`, { refreshToken });
+          console.log("Đăng xuất thành công trên server");
+        } catch (logoutError) {
+          // Nếu có lỗi khi gọi API logout, vẫn tiếp tục đăng xuất ở client
+          console.warn("Không thể đăng xuất trên server, tiếp tục đăng xuất ở client:", logoutError);
+        }
       }
     } catch (error) {
       console.error("Logout error:", error);
     } finally {
+      // Xóa dữ liệu người dùng khỏi state
       setUser(null);
+
+      // Xóa tất cả dữ liệu đăng nhập khỏi localStorage
       localStorage.removeItem("accessToken");
       localStorage.removeItem("refreshToken");
       localStorage.removeItem("user");
-      delete axios.defaults.headers.common["Authorization"];
+      localStorage.removeItem("lastActivity");
+
+      console.log("Đã đăng xuất và xóa dữ liệu người dùng");
+
+      // Chuyển hướng về trang đăng nhập
       router.push("/login");
     }
   };
@@ -267,7 +373,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       logout,
       loading,
       loginWithCredentials,
-      verifyCode
+      verifyCode,
+      forceTokenRefresh
     }}>
       {children}
     </AuthContext.Provider>

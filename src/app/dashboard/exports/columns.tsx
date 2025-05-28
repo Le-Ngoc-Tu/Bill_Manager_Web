@@ -109,7 +109,7 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
   },
   {
-    accessorKey: "total_before_tax",
+    accessorKey: "buyer_name",
     header: ({ column }) => {
       return (
         <div className="text-center">
@@ -118,7 +118,32 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
             className="w-full hover:bg-red-800 hover:text-white"
           >
-            Tổng trước thuế
+            Người mua
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+      )
+    },
+    cell: ({ row }) => {
+      const item = row.original
+      return <div>{item.details && item.details.length > 0 ? item.details[0].buyer_name : ''}</div>
+    },
+    meta: {
+      columnName: "Người mua"
+    },
+    enableHiding: true, // Cho phép ẩn cột này trên thiết bị di động
+  },
+  {
+    accessorKey: "total_before_tax",
+    header: ({ column }) => {
+      return (
+        <div className="text-center" style={{ minWidth: '200px' }}>
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+            className="w-full hover:bg-red-800 hover:text-white"
+          >
+            Tổng tiền trước thuế
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         </div>
@@ -126,10 +151,10 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_before_tax"))
-      return <div className="font-bold">{formatCurrency(amount)}</div>
+      return <div className="font-bold w-full" style={{ minWidth: '200px' }}>{formatCurrency(amount)}</div>
     },
     meta: {
-      columnName: "Tổng trước thuế"
+      columnName: "Tổng tiền trước thuế"
     },
     enableHiding: true, // Cho phép ẩn cột này trên thiết bị di động
   },
@@ -137,13 +162,13 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     accessorKey: "total_tax",
     header: ({ column }) => {
       return (
-        <div className="text-center">
+        <div className="text-center" style={{ minWidth: '150px' }}>
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
             className="w-full hover:bg-red-800 hover:text-white"
           >
-            Tổng thuế
+            Thuế
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         </div>
@@ -151,10 +176,10 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_tax"))
-      return <div className="font-bold">{formatCurrency(amount)}</div>
+      return <div className="font-bold w-full" style={{ minWidth: '150px' }}>{formatCurrency(amount)}</div>
     },
     meta: {
-      columnName: "Tổng thuế"
+      columnName: "Thuế"
     },
     enableHiding: true, // Cho phép ẩn cột này trên thiết bị di động
   },
@@ -162,13 +187,13 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     accessorKey: "total_after_tax",
     header: ({ column }) => {
       return (
-        <div className="text-center">
+        <div className="text-center" style={{ minWidth: '200px' }}>
           <Button
             variant="ghost"
             onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
             className="w-full hover:bg-red-800 hover:text-white"
           >
-            Tổng sau thuế
+            Tổng tiền sau thuế
             <ArrowUpDown className="ml-2 h-4 w-4" />
           </Button>
         </div>
@@ -176,10 +201,10 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
     cell: ({ row }) => {
       const amount = parseFloat(row.getValue("total_after_tax"))
-      return <div className="font-bold">{formatCurrency(amount)}</div>
+      return <div className="font-bold w-full" style={{ minWidth: '200px' }}>{formatCurrency(amount)}</div>
     },
     meta: {
-      columnName: "Tổng sau thuế"
+      columnName: "Tổng tiền sau thuế"
     },
   },
 

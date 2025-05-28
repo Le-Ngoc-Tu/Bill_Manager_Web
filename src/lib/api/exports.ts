@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 import { format } from "date-fns";
 
 // Định nghĩa kiểu dữ liệu
@@ -60,9 +59,7 @@ export const getExports = async (searchParams?: Record<string, string>) => {
       });
     }
 
-    const response = await axios.get(`${API_URL}/exports?${params.toString()}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/exports?${params.toString()}`);
 
     return response.data;
   } catch (error) {
@@ -74,9 +71,7 @@ export const getExports = async (searchParams?: Record<string, string>) => {
 // Lấy chi tiết hóa đơn xuất kho
 export const getExportById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/exports/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/exports/${id}`);
 
     return response.data;
   } catch (error) {
@@ -103,6 +98,10 @@ export const createExport = async (data: ExportFormData) => {
         // Đảm bảo các trường số được gửi đúng định dạng
         quantity: Number(detail.quantity),
         price_before_tax: Number(detail.price_before_tax),
+        // Đảm bảo các trường bắt buộc luôn có giá trị
+        unit: detail.unit || "",
+        category: detail.category || "HH",
+        tax_rate: detail.tax_rate || "0%",
         // Bỏ các trường tính toán để backend tự tính
         total_before_tax: undefined,
         tax_amount: undefined,
@@ -116,12 +115,7 @@ export const createExport = async (data: ExportFormData) => {
     console.log("Create submitData:", submitData);
     console.log("Note field in create submitData:", submitData.note);
 
-    const response = await axios.post(`${API_URL}/exports`, submitData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.post(`/exports`, submitData);
 
     console.log("Create API response:", response.data);
     console.log("Note field in create API response:", response.data?.data?.note);
@@ -152,6 +146,10 @@ export const updateExport = async (id: number, data: ExportFormData) => {
         // Đảm bảo các trường số được gửi đúng định dạng
         quantity: Number(detail.quantity),
         price_before_tax: Number(detail.price_before_tax),
+        // Đảm bảo các trường bắt buộc luôn có giá trị
+        unit: detail.unit || "",
+        category: detail.category || "HH",
+        tax_rate: detail.tax_rate || "0%",
         // Bỏ các trường tính toán để backend tự tính
         total_before_tax: undefined,
         tax_amount: undefined,
@@ -166,16 +164,10 @@ export const updateExport = async (id: number, data: ExportFormData) => {
     console.log("Note field in submitData:", submitData.note);
 
     // In ra URL và dữ liệu gửi đi để debug
-    console.log(`PUT ${API_URL}/exports/${id}`);
-    console.log("Headers:", { ...getAuthHeader(), 'Content-Type': 'application/json' });
+    console.log(`PUT /exports/${id}`);
     console.log("Request body:", JSON.stringify(submitData, null, 2));
 
-    const response = await axios.put(`${API_URL}/exports/${id}`, submitData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.put(`/exports/${id}`, submitData);
 
     console.log("API response:", response.data);
     console.log("Note field in API response:", response.data?.data?.note);
@@ -189,9 +181,7 @@ export const updateExport = async (id: number, data: ExportFormData) => {
 // Xóa hóa đơn xuất kho
 export const deleteExport = async (id: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/exports/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.delete(`/exports/${id}`);
 
     return response.data;
   } catch (error) {
@@ -203,12 +193,7 @@ export const deleteExport = async (id: number) => {
 // Thêm chi tiết hàng hóa mới vào hóa đơn
 export const addExportDetail = async (exportId: number, detailData: any) => {
   try {
-    const response = await axios.post(`${API_URL}/exports/${exportId}/details`, detailData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.post(`/exports/${exportId}/details`, detailData);
 
     return response.data;
   } catch (error) {
@@ -220,12 +205,7 @@ export const addExportDetail = async (exportId: number, detailData: any) => {
 // Cập nhật chi tiết hàng hóa trong hóa đơn
 export const updateExportDetail = async (exportId: number, detailId: number, detailData: any) => {
   try {
-    const response = await axios.put(`${API_URL}/exports/${exportId}/details/${detailId}`, detailData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.put(`/exports/${exportId}/details/${detailId}`, detailData);
 
     return response.data;
   } catch (error) {
@@ -237,9 +217,7 @@ export const updateExportDetail = async (exportId: number, detailId: number, det
 // Xóa chi tiết hàng hóa trong hóa đơn
 export const deleteExportDetail = async (exportId: number, detailId: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/exports/${exportId}/details/${detailId}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.delete(`/exports/${exportId}/details/${detailId}`);
 
     return response.data;
   } catch (error) {
@@ -252,12 +230,19 @@ export const deleteExportDetail = async (exportId: number, detailId: number) => 
 function calculateTaxAmount(amount: number, taxRate: string): number {
   if (taxRate === "KCT") return 0;
 
+  // Làm tròn số tiền trước khi tính thuế
+  const roundedAmount = Math.round(amount);
+
   const rate = parseFloat(taxRate.replace("%", "")) / 100;
-  return amount * rate;
+  // Làm tròn số tiền thuế
+  return Math.round(roundedAmount * rate);
 }
 
 // Hàm tính tổng sau thuế
 function calculateTotalAfterTax(amount: number, taxRate: string): number {
-  const taxAmount = calculateTaxAmount(amount, taxRate);
-  return amount + taxAmount;
+  // Làm tròn số tiền trước khi tính thuế
+  const roundedAmount = Math.round(amount);
+
+  const taxAmount = calculateTaxAmount(roundedAmount, taxRate);
+  return roundedAmount + taxAmount;
 }

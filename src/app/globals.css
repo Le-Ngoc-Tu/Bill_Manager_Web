@@ -117,7 +117,169 @@
     @apply border-border outline-ring/50;
   }
 
+  /* Đảm bảo các dropdown không bị cắt bởi overflow */
+  [data-radix-popper-content-wrapper] {
+    z-index: 9999 !important;
+  }
+
+  /* Ẩn thanh cuộn trong dropdown */
+  .popover-content::-webkit-scrollbar,
+  [data-radix-popper-content-wrapper] *::-webkit-scrollbar,
+  [cmdk-list]::-webkit-scrollbar,
+  [cmdk-group]::-webkit-scrollbar,
+  .max-h-60::-webkit-scrollbar {
+    display: none !important;
+    width: 0 !important;
+    height: 0 !important;
+  }
+
+  .popover-content,
+  [data-radix-popper-content-wrapper] *,
+  [cmdk-list],
+  [cmdk-group],
+  .max-h-60 {
+    -ms-overflow-style: none !important;
+    scrollbar-width: none !important;
+  }
+
+  /* Đảm bảo dropdown hiển thị đè lên các phần tử khác */
+  [data-radix-popper-content-wrapper] {
+    z-index: 9999 !important;
+    overflow: visible !important;
+  }
+
+  /* Đảm bảo portal hiển thị đúng */
+  [data-radix-portal] {
+    z-index: 9999 !important;
+  }
+
+  /* Đảm bảo dropdown trong bảng hiển thị đúng */
+  .relative .absolute.z-50,
+  .relative .fixed.z-50 {
+    z-index: 9999 !important;
+  }
+
+  /* Đảm bảo dropdown hàng hóa hiển thị đúng */
+  .relative .absolute.z-50 {
+    position: absolute !important;
+    transform: none !important;
+    overflow: visible !important;
+  }
+
+  /* Đảm bảo dropdown có thanh cuộn mỏng và đẹp */
+  .absolute.z-50::-webkit-scrollbar {
+    width: 4px !important;
+    height: 4px !important;
+  }
+
+  .absolute.z-50::-webkit-scrollbar-thumb {
+    background-color: rgba(0, 0, 0, 0.2) !important;
+    border-radius: 4px !important;
+  }
+
+  .absolute.z-50::-webkit-scrollbar-track {
+    background-color: transparent !important;
+  }
+
+  /* Đảm bảo dropdown hiển thị đè lên các phần tử khác */
+  .absolute.z-50 {
+    box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06) !important;
+    border-radius: 4px !important;
+  }
+
+  /* Đảm bảo dropdown hiển thị đúng vị trí */
+  .relative .absolute.z-50 {
+    top: calc(100% + 4px) !important;
+  }
+
+  /* Đảm bảo dropdown có viền và góc bo tròn */
+  .absolute.z-50 {
+    border: 1px solid rgba(0, 0, 0, 0.1) !important;
+    border-radius: 4px !important;
+  }
+
+  /* Đảm bảo các mục trong dropdown hiển thị đẹp */
+  .absolute.z-50 > div {
+    transition: background-color 0.2s ease !important;
+  }
+
+  /* Đảm bảo dropdown có thanh cuộn đẹp */
+  .absolute.z-50 {
+    scrollbar-width: thin !important;
+    scrollbar-color: rgba(0, 0, 0, 0.2) transparent !important;
+  }
+
   body {
     @apply bg-background text-foreground;
+  }
+
+  /* Thêm viền xanh dương nhẹ khi focus */
+  *:focus,
+  *:focus-visible {
+    box-shadow: none !important;
+    outline: none !important;
+    border-color: #90caf9 !important; /* Màu xanh dương nhẹ */
+    ring-width: 0 !important;
+    ring-offset-width: 0 !important;
+    ring-color: transparent !important;
+    ring-offset-color: transparent !important;
+  }
+
+  /* Loại bỏ box shadow màu đỏ cho các phần tử trong dropdown */
+  .popover-content button:focus-visible,
+  .popover-content [role="button"]:focus-visible,
+  .popover-content [role="option"]:focus-visible,
+  .popover-content [role="combobox"]:focus-visible,
+  .popover-content [role="listbox"]:focus-visible,
+  .popover-content [role="menuitem"]:focus-visible,
+  .popover-content [role="menu"]:focus-visible,
+  .popover-content [role="dialog"]:focus-visible,
+  .popover-content [role="grid"]:focus-visible,
+  .popover-content [role="gridcell"]:focus-visible,
+  .popover-content [role="tab"]:focus-visible,
+  .popover-content [role="tabpanel"]:focus-visible,
+  .popover-content [role="tree"]:focus-visible,
+  .popover-content [role="treeitem"]:focus-visible,
+  .popover-content [role="alert"]:focus-visible,
+  .popover-content [role="alertdialog"]:focus-visible,
+  .popover-content [role="tooltip"]:focus-visible,
+  .popover-content [role="status"]:focus-visible,
+  .popover-content [role="log"]:focus-visible,
+  .popover-content [role="marquee"]:focus-visible,
+  .popover-content [role="timer"]:focus-visible,
+  .popover-content [role="progressbar"]:focus-visible,
+  .popover-content [role="spinbutton"]:focus-visible,
+  .popover-content [role="slider"]:focus-visible,
+  .popover-content [role="scrollbar"]:focus-visible,
+  .popover-content [role="textbox"]:focus-visible,
+  .popover-content [role="searchbox"]:focus-visible,
+  .popover-content [role="search"]:focus-visible,
+  .popover-content [role="form"]:focus-visible,
+  .popover-content [role="application"]:focus-visible,
+  .popover-content [role="document"]:focus-visible,
+  .popover-content [role="img"]:focus-visible,
+  .popover-content [role="banner"]:focus-visible,
+  .popover-content [role="complementary"]:focus-visible,
+  .popover-content [role="contentinfo"]:focus-visible,
+  .popover-content [role="main"]:focus-visible,
+  .popover-content [role="navigation"]:focus-visible,
+  .popover-content [role="region"]:focus-visible,
+  .popover-content [role="article"]:focus-visible,
+  .popover-content [role="definition"]:focus-visible,
+  .popover-content [role="directory"]:focus-visible,
+  .popover-content [role="feed"]:focus-visible,
+  .popover-content [role="figure"]:focus-visible,
+  .popover-content [role="group"]:focus-visible,
+  .popover-content [role="heading"]:focus-visible,
+  .popover-content [role="list"]:focus-visible,
+  .popover-content [role="listitem"]:focus-visible,
+  .popover-content [role="math"]:focus-visible,
+  .popover-content [role="note"]:focus-visible,
+  .popover-content [role="presentation"]:focus-visible,
+  .popover-content [role="separator"]:focus-visible,
+  .popover-content [role="toolbar"]:focus-visible {
+    box-shadow: none !important;
+    outline: none !important;
+    border-color: var(--border) !important;
   }
 }

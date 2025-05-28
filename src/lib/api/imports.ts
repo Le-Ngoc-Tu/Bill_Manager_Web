@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 import { format } from "date-fns";
 
 // Định nghĩa kiểu dữ liệu
@@ -57,9 +56,7 @@ export const getImports = async (searchParams?: Record<string, string>) => {
       });
     }
 
-    const response = await axios.get(`${API_URL}/imports?${params.toString()}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/imports?${params.toString()}`);
 
     return response.data;
   } catch (error) {
@@ -71,9 +68,7 @@ export const getImports = async (searchParams?: Record<string, string>) => {
 // Lấy chi tiết hóa đơn nhập kho
 export const getImportById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/imports/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/imports/${id}`);
 
     return response.data;
   } catch (error) {
@@ -113,25 +108,34 @@ export const createImport = async (data: ImportFormData) => {
         price_before_tax: Number(d.price_before_tax),
         // Đảm bảo mỗi chi tiết đều có seller_name
         seller_name: d.seller_name || sellerName,
-        // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-        total_before_tax: undefined,
-        total_after_tax: undefined,
-        tax_amount: undefined
+        // Gửi các trường tính toán đã được làm tròn
+        total_before_tax: Math.round(Number(d.quantity) * Number(d.price_before_tax)),
+        tax_amount: Math.round((Math.round(Number(d.quantity) * Number(d.price_before_tax)) *
+          (d.tax_rate === "KCT" ? 0 : Number(d.tax_rate?.replace("%", "") || 0))) / 100),
+        total_after_tax: Math.round(Number(d.quantity) * Number(d.price_before_tax)) +
+          Math.round((Math.round(Number(d.quantity) * Number(d.price_before_tax)) *
+          (d.tax_rate === "KCT" ? 0 : Number(d.tax_rate?.replace("%", "") || 0))) / 100)
       }))
     };
 
     console.log("Create submitData:", submitData);
     console.log("Note field in create submitData:", submitData.note);
-
-    const response = await axios.post(`${API_URL}/imports`, submitData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
+    console.log("Manual edit flags in create:", {
+      is_invoice_totals_manually_edited: submitData.is_invoice_totals_manually_edited,
+      total_before_tax: submitData.total_before_tax,
+      total_tax: submitData.total_tax,
+      total_after_tax: submitData.total_after_tax
     });
+
+    const response = await apiClient.post(`/imports`, submitData);
 
     console.log("Create API response:", response.data);
     console.log("Note field in create API response:", response.data?.data?.note);
+    console.log("Total amounts in create API response:", {
+      total_before_tax: response.data?.data?.import?.total_before_tax,
+      total_tax: response.data?.data?.import?.total_tax,
+      total_after_tax: response.data?.data?.import?.total_after_tax
+    });
     return response.data;
   } catch (error) {
     console.error("Error creating import:", error);
@@ -164,10 +168,13 @@ export const updateImport = async (id: number, data: ImportFormData) => {
         ...d,
         quantity: Number(d.quantity),
         price_before_tax: Number(d.price_before_tax),
-        // Bỏ các trường tính toán hoặc chỉ đọc nếu backend không nhận
-        total_before_tax: undefined,
-        total_after_tax: undefined,
-        tax_amount: undefined
+        // Gửi các trường tính toán đã được làm tròn
+        total_before_tax: Math.round(Number(d.quantity) * Number(d.price_before_tax)),
+        tax_amount: Math.round((Math.round(Number(d.quantity) * Number(d.price_before_tax)) *
+          (d.tax_rate === "KCT" ? 0 : Number(d.tax_rate?.replace("%", "") || 0))) / 100),
+        total_after_tax: Math.round(Number(d.quantity) * Number(d.price_before_tax)) +
+          Math.round((Math.round(Number(d.quantity) * Number(d.price_before_tax)) *
+          (d.tax_rate === "KCT" ? 0 : Number(d.tax_rate?.replace("%", "") || 0))) / 100)
       }))
     };
 
@@ -175,16 +182,10 @@ export const updateImport = async (id: number, data: ImportFormData) => {
     console.log("Note field in submitData:", submitData.note);
 
     // In ra URL và dữ liệu gửi đi để debug
-    console.log(`PUT ${API_URL}/imports/${id}`);
-    console.log("Headers:", { ...getAuthHeader(), 'Content-Type': 'application/json' });
+    console.log(`PUT /imports/${id}`);
     console.log("Request body:", JSON.stringify(submitData, null, 2));
 
-    const response = await axios.put(`${API_URL}/imports/${id}`, submitData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.put(`/imports/${id}`, submitData);
 
     console.log("API response:", response.data);
     console.log("Note field in API response:", response.data?.data?.note);
@@ -198,9 +199,7 @@ export const updateImport = async (id: number, data: ImportFormData) => {
 // Xóa hóa đơn nhập kho
 export const deleteImport = async (id: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/imports/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.delete(`/imports/${id}`);
 
     return response.data;
   } catch (error) {
@@ -212,12 +211,7 @@ export const deleteImport = async (id: number) => {
 // Thêm chi tiết hàng hóa mới vào hóa đơn
 export const addImportDetail = async (importId: number, detailData: any) => {
   try {
-    const response = await axios.post(`${API_URL}/imports/${importId}/details`, detailData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.post(`/imports/${importId}/details`, detailData);
 
     return response.data;
   } catch (error) {
@@ -229,12 +223,7 @@ export const addImportDetail = async (importId: number, detailData: any) => {
 // Cập nhật chi tiết hàng hóa trong hóa đơn
 export const updateImportDetail = async (importId: number, detailId: number, detailData: any) => {
   try {
-    const response = await axios.put(`${API_URL}/imports/${importId}/details/${detailId}`, detailData, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.put(`/imports/${importId}/details/${detailId}`, detailData);
 
     return response.data;
   } catch (error) {
@@ -246,9 +235,7 @@ export const updateImportDetail = async (importId: number, detailId: number, det
 // Xóa chi tiết hàng hóa trong hóa đơn
 export const deleteImportDetail = async (importId: number, detailId: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/imports/${importId}/details/${detailId}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.delete(`/imports/${importId}/details/${detailId}`);
 
     return response.data;
   } catch (error) {

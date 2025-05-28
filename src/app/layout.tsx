@@ -22,6 +22,16 @@ export const metadata: Metadata = {
     icon: '/NLTECH.png',
     apple: '/NLTECH.png',
   },
+  robots: {
+    index: false,
+    follow: false,
+    nocache: true,
+    googleBot: {
+      index: false,
+      follow: false,
+      noimageindex: true,
+    },
+  },
 };
 
 export default function RootLayout({
@@ -33,6 +43,8 @@ export default function RootLayout({
     <html lang="vi">
       <head>
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <meta name="robots" content="noindex, nofollow, noarchive, nocache" />
+        <meta name="googlebot" content="noindex, nofollow, noimageindex" />
         <link rel="icon" href="./favicon.ico" />
       </head>
       <body

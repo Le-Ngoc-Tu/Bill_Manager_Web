@@ -20,7 +20,7 @@ import { getColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { formatCurrency, formatQuantity } from "@/lib/utils"
+import { formatCurrency, formatQuantity, formatPrice } from "@/lib/utils"
 import { ExportForm } from "@/components/forms/ExportForm"
 
 // Import các API đã tách
@@ -531,11 +531,29 @@ export default function ExportsPage() {
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell">{detail.category}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center">{detail.unit}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center">{formatQuantity(detail.quantity)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">{formatCurrency(detail.price_before_tax)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">{formatPrice(detail.price_before_tax)}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden md:table-cell font-bold">{formatCurrency(detail.total_before_tax)}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell font-bold">{detail.tax_rate}</TableCell>
                               <TableCell className="text-sm md:text-base py-2 md:py-3 text-right hidden lg:table-cell font-bold">{formatCurrency(detail.tax_amount)}</TableCell>
-                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">{formatCurrency(detail.total_after_tax)}</TableCell>
+                              <TableCell className="text-sm md:text-base py-2 md:py-3 text-right font-bold">
+                                {formatCurrency(
+                                  // Tính lại tổng tiền sau thuế để đảm bảo nhất quán với backend
+                                  (() => {
+                                    // Tính tổng tiền trước thuế và làm tròn thành số nguyên (giống backend)
+                                    const totalBeforeTax = Math.round(detail.total_before_tax || 0);
+
+                                    // Tính thuế dựa trên tổng tiền trước thuế đã làm tròn (giống backend)
+                                    let taxRate = 0;
+                                    if (detail.tax_rate !== "KCT") {
+                                      taxRate = Number(detail.tax_rate?.replace("%", "") || 0) / 100;
+                                    }
+                                    const taxAmount = Math.round(totalBeforeTax * taxRate);
+
+                                    // Tính tổng tiền sau thuế bằng cách cộng tổng tiền trước thuế đã làm tròn và thuế đã làm tròn
+                                    return totalBeforeTax + taxAmount;
+                                  })()
+                                )}
+                              </TableCell>
                             </TableRow>
                           ))}
                         </TableBody>
@@ -557,8 +575,8 @@ export default function ExportsPage() {
           {/* Modal thêm/sửa hóa đơn */}
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
             <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[95vw] xl:max-w-[1800px] w-full p-2 md:p-6 overflow-hidden">
-              <DialogHeader>
-                <DialogTitle className="text-lg md:text-xl">
+              <DialogHeader className="hidden">
+                <DialogTitle>
                   {selectedExport ? "Chỉnh sửa hóa đơn xuất kho" : "Thêm hóa đơn xuất kho"}
                 </DialogTitle>
               </DialogHeader>

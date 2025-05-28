@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 
 // Định nghĩa kiểu dữ liệu
 export interface Inventory {
@@ -8,6 +7,9 @@ export interface Inventory {
   unit: string;
   quantity: number;
   category: "HH" | "CP";
+  price?: number;
+  latest_import_price?: number | null;
+  latest_import_date?: string | null;
   createdAt?: string;
   updatedAt?: string;
 }
@@ -21,13 +23,13 @@ export interface InventoryFormData {
 }
 
 // Lấy danh sách hàng hóa trong kho
-export const getInventoryItems = async (forCombobox = false, category = "") => {
+export const getInventoryItems = async (forCombobox = false, category = "", includeLatestImportPrice = false) => {
   try {
-    const response = await axios.get(`${API_URL}/inventory`, {
-      headers: getAuthHeader(),
+    const response = await apiClient.get(`/inventory`, {
       params: {
         forCombobox: forCombobox,
-        category: category // Thêm tham số category để lọc theo loại
+        category: category, // Thêm tham số category để lọc theo loại
+        includeLatestImportPrice: includeLatestImportPrice // Thêm tham số để lấy giá nhập gần nhất
       }
     });
 
@@ -41,9 +43,7 @@ export const getInventoryItems = async (forCombobox = false, category = "") => {
 // Lấy chi tiết hàng hóa
 export const getInventoryItemById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/inventory/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/inventory/${id}`);
 
     return response.data;
   } catch (error) {
@@ -53,14 +53,10 @@ export const getInventoryItemById = async (id: number) => {
 };
 
 // Tạo mới hàng hóa trong kho
-export const createInventoryItem = async (data: InventoryFormData) => {
+export const createInventoryItem = async (data: InventoryFormData, force: boolean = false) => {
   try {
-    const response = await axios.post(`${API_URL}/inventory`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const url = force ? `/inventory?force=true` : `/inventory`;
+    const response = await apiClient.post(url, data);
 
     return response.data;
   } catch (error) {
@@ -72,12 +68,7 @@ export const createInventoryItem = async (data: InventoryFormData) => {
 // Cập nhật hàng hóa trong kho
 export const updateInventoryItem = async (id: number, data: InventoryFormData) => {
   try {
-    const response = await axios.put(`${API_URL}/inventory/${id}`, data, {
-      headers: {
-        ...getAuthHeader(),
-        'Content-Type': 'application/json'
-      }
-    });
+    const response = await apiClient.put(`/inventory/${id}`, data);
 
     return response.data;
   } catch (error) {
@@ -89,13 +80,23 @@ export const updateInventoryItem = async (id: number, data: InventoryFormData) =
 // Xóa hàng hóa khỏi kho
 export const deleteInventoryItem = async (id: number) => {
   try {
-    const response = await axios.delete(`${API_URL}/inventory/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.delete(`/inventory/${id}`);
 
     return response.data;
   } catch (error) {
     console.error("Error deleting inventory item:", error);
+    throw error;
+  }
+};
+
+// Tìm hàng hóa tương tự
+export const findSimilarInventoryItems = async (data: Partial<InventoryFormData>) => {
+  try {
+    const response = await apiClient.post(`/inventory/similar`, data);
+
+    return response.data;
+  } catch (error) {
+    console.error("Error finding similar inventory items:", error);
     throw error;
   }
 };

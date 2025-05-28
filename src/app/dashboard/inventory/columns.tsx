@@ -15,6 +15,12 @@ interface GetColumnsProps {
 }
 
 export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): ColumnDef<Inventory>[] {
+  // Hàm kiểm tra hàng hóa hết hàng để tô màu vàng
+  const getRowClassName = (row: any) => {
+    const quantity = row.getValue("quantity") as number;
+    const numericQuantity = Number(quantity);
+    return numericQuantity === 0 ? "bg-yellow-100" : "";
+  };
   return [
     {
       id: "select",
@@ -44,7 +50,8 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       enableSorting: false,
       enableHiding: false,
       meta: {
-        columnName: "Chọn"
+        columnName: "Chọn",
+        getRowClassName: getRowClassName
       },
     },
     {
@@ -121,7 +128,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
       cell: ({ row }) => {
         const category = row.getValue("category") as string
-        return <div className="text-center">{category === "HH" ? "Hàng hóa" : "Chi phí"}</div>
+        return <div className="text-center">{category}</div>
       },
       meta: {
         columnName: "Loại"
@@ -140,6 +147,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
               Số lượng
               <ArrowUpDown className="ml-2 h-4 w-4" />
             </Button>
+
           </div>
         )
       },
@@ -162,7 +170,14 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
           formattedQuantity = numericQuantity.toString().replace(/(\.\d*?)0+$/, '$1').replace(/\.$/, '');
         }
 
-        return <div className="text-center">{formattedQuantity}</div>;
+        return (
+          <div className="text-center group relative">
+            {formattedQuantity}
+            <div className="absolute hidden group-hover:block bg-black text-white text-xs rounded p-2 z-50 w-48 -left-16 top-6">
+              Số lượng được tính toán tự động dựa trên các hóa đơn nhập/xuất
+            </div>
+          </div>
+        );
       },
       meta: {
         columnName: "Số lượng"

@@ -21,7 +21,7 @@ import { getColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { formatCurrency, formatQuantity } from "@/lib/utils"
+import { formatCurrency, formatQuantity, formatPrice } from "@/lib/utils"
 
 // Import các API đã tách
 import { getImports, getImportById, createImport, updateImport, deleteImport, ImportInvoice } from "@/lib/api/imports"
@@ -486,13 +486,13 @@ export default function ImportsPage() {
 
           {/* Modal xem chi tiết */}
           <Dialog open={isViewModalOpen} onOpenChange={setIsViewModalOpen}>
-            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[95vw] xl:max-w-[1800px] w-full p-2 md:p-6 overflow-hidden">
-              <DialogHeader>
-                <DialogTitle className="text-lg md:text-xl">Chi tiết hóa đơn nhập kho</DialogTitle>
+            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[95vw] xl:max-w-[1800px] w-full p-6 md:p-8 lg:p-10 max-h-[90vh] overflow-y-auto">
+              <DialogHeader className="hidden">
+                <DialogTitle>Chi tiết hóa đơn nhập kho</DialogTitle>
               </DialogHeader>
               {selectedImport && (
-                <div className="space-y-3 md:space-y-4 h-[70vh] overflow-y-auto pr-2">
-                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 md:gap-4">
+                <div className="space-y-4 md:space-y-6 pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                     <div className="flex items-center">
                       <p className="text-base md:text-xl font-bold mr-2">Số hóa đơn:</p>
                       <p className="text-base md:text-xl">{selectedImport.invoice_number}</p>
@@ -501,15 +501,20 @@ export default function ImportsPage() {
                       <p className="text-base md:text-xl font-bold mr-2">Ngày hóa đơn:</p>
                       <p className="text-base md:text-xl">{format(new Date(selectedImport.invoice_date), 'dd/MM/yyyy')}</p>
                     </div>
-                    {/* Đã bỏ phần người bán và mã số thuế vì đã có trong bảng từng hàng hóa */}
-                    <div className="flex items-center">
-                      <p className="text-base md:text-xl font-bold mr-2">Mô tả:</p>
-                      <p className="text-base md:text-xl">{selectedImport.description || 'Không có'}</p>
-                    </div>
-                    <div className="flex items-center">
-                      <p className="text-base md:text-xl font-bold mr-2">Ghi chú:</p>
-                      <p className="text-base md:text-xl">{selectedImport.note || 'Không có'}</p>
-                    </div>
+                    {selectedImport.details && selectedImport.details.length > 0 && selectedImport.details[0].seller_name && (
+                      <div className="flex flex-col sm:col-span-2">
+                        <div className="flex items-center">
+                          <p className="text-base md:text-xl font-bold mr-2">Người bán:</p>
+                          <p className="text-base md:text-xl">{selectedImport.details[0].seller_name}</p>
+                        </div>
+                        {selectedImport.details[0].seller_tax_code && (
+                          <div className="flex items-center mt-1">
+                            <p className="text-base md:text-xl font-bold mr-2">Mã số thuế:</p>
+                            <p className="text-base md:text-xl">{selectedImport.details[0].seller_tax_code}</p>
+                          </div>
+                        )}
+                      </div>
+                    )}
                   </div>
 
                   <div>
@@ -520,16 +525,15 @@ export default function ImportsPage() {
                         <Table className="w-full min-w-[800px]">
                         <TableHeader className="bg-destructive rounded-t-sm sticky top-0 z-10">
                           <TableRow className="hover:bg-transparent">
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[25%] min-w-[120px]">Tên hàng</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[6%]">Loại</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[6%]">Đơn vị</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[6%] min-w-[80px]">Số lượng</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[8%] min-w-[80px]">Đơn giá</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[8%]">Thành tiền</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[6%]">Thuế suất</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden lg:table-cell w-[8%]">Tiền thuế</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[8%] min-w-[100px]">Tổng cộng</TableHead>
-                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[20%]">Người bán</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[30%] min-w-[150px]">Tên hàng</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[8%]">Loại</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[8%]">Đơn vị</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[10%] min-w-[80px]">Số lượng</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[12%] min-w-[100px]">Đơn giá</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[12%]">Thành tiền</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[8%]">Thuế suất</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden lg:table-cell w-[10%]">Tiền thuế</TableHead>
+                            <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[12%] min-w-[120px]">Tổng cộng</TableHead>
                           </TableRow>
                         </TableHeader>
                         <TableBody>
@@ -539,14 +543,12 @@ export default function ImportsPage() {
                               <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3 text-center">{detail.category === 'HH' ? 'Hàng hóa' : 'Chi phí'}</TableCell>
                               <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3 text-center">{detail.unit}</TableCell>
                               <TableCell className="text-center text-sm md:text-base py-2 md:py-3">{formatQuantity(detail.quantity)}</TableCell>
-                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.price_before_tax)}</TableCell>
+                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">{formatPrice(detail.price_before_tax)}</TableCell>
                               <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.total_before_tax || 0)}</TableCell>
                               <TableCell className="text-center hidden md:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{detail.tax_rate === "KCT" ? "KCT" : detail.tax_rate}</TableCell>
                               <TableCell className="text-center hidden lg:table-cell text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.tax_amount || 0)}</TableCell>
-                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">{formatCurrency(detail.total_after_tax || 0)}</TableCell>
-                              <TableCell className="hidden md:table-cell text-sm md:text-base py-2 md:py-3">
-                                {detail.seller_name}
-                                {detail.seller_tax_code && <span className="text-sm text-gray-500 block">MST: {detail.seller_tax_code}</span>}
+                              <TableCell className="text-center text-sm md:text-base py-2 md:py-3 font-bold">
+                                {formatCurrency(detail.total_after_tax || 0)}
                               </TableCell>
                             </TableRow>
                           ))}
@@ -559,29 +561,29 @@ export default function ImportsPage() {
                     {/* Đã bỏ phân trang vì đã có ScrollArea */}
                   </div>
 
-                  <div className="flex justify-between items-center pt-3 md:pt-4 border-t">
+                  <div className="flex justify-between items-center pt-6 md:pt-8 border-t mt-6">
                     <div></div>
-                    <div className="space-y-1">
+                    <div className="space-y-2 md:space-y-3">
                       <div className="flex justify-between">
-                        <span className="font-medium mr-4 md:mr-8 text-sm md:text-base">Tổng tiền hàng:</span>
+                        <span className="font-medium mr-6 md:mr-10 text-sm md:text-base">Tổng tiền hàng:</span>
                         <span className="text-sm md:text-base font-bold">{formatCurrency(selectedImport.total_before_tax)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="font-medium mr-4 md:mr-8 text-sm md:text-base">Tổng tiền thuế:</span>
+                        <span className="font-medium mr-6 md:mr-10 text-sm md:text-base">Tổng tiền thuế:</span>
                         <span className="text-sm md:text-base font-bold">{formatCurrency(selectedImport.total_tax)}</span>
                       </div>
-                      <div className="flex justify-between text-lg md:text-xl font-bold">
-                        <span className="mr-4 md:mr-8">Tổng thanh toán:</span>
+                      <div className="flex justify-between text-lg md:text-xl font-bold pt-2 border-t">
+                        <span className="mr-6 md:mr-10">Tổng thanh toán:</span>
                         <span>{formatCurrency(selectedImport.total_after_tax)}</span>
                       </div>
                     </div>
                   </div>
                 </div>
               )}
-              <DialogFooter className="mt-4">
+              <DialogFooter className="mt-6 pt-4 border-t">
                 <Button
                   onClick={() => setIsViewModalOpen(false)}
-                  className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
+                  className="h-10 md:h-12 px-6 md:px-10 text-sm md:text-base w-full sm:w-auto"
                 >
                   Đóng
                 </Button>
@@ -591,11 +593,11 @@ export default function ImportsPage() {
 
           {/* Modal thêm/sửa hóa đơn */}
           <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[95vw] xl:max-w-[1800px] w-full p-2 md:p-4 max-h-[90vh] h-auto overflow-hidden">
-              <DialogHeader>
-                <DialogTitle className="text-lg md:text-xl">{selectedImport ? 'Chỉnh sửa hóa đơn nhập kho' : 'Thêm hóa đơn nhập kho mới'}</DialogTitle>
+            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[95vw] xl:max-w-[1800px] w-full p-6 md:p-8 lg:p-10 max-h-[90vh] h-auto overflow-y-auto">
+              <DialogHeader className="hidden">
+                <DialogTitle>{selectedImport ? 'Chỉnh sửa hóa đơn nhập kho' : 'Thêm hóa đơn nhập kho mới'}</DialogTitle>
               </DialogHeader>
-              <div className="max-h-[calc(90vh-120px)] overflow-y-auto pr-2">
+              <div className="pr-2">
                 <ImportForm
                 mode={selectedImport ? "edit" : "add"}
                 initialData={selectedImport}

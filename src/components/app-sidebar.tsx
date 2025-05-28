@@ -63,13 +63,24 @@ const data = {
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   const { user } = useAuth()
   const isMobile = useIsMobile()
-
-  // Tạo đối tượng người dùng cho NavUser
-  const userInfo = {
-    name: user?.username || "Admin",
-    email: user?.username ? `${user.username}@nltech.vn` : "admin@nltech.vn",
+  const [userInfo, setUserInfo] = React.useState({
+    name: "Admin",
+    email: "admin@nltech.vn",
     avatar: "/NLTECH.png",
-  }
+  })
+
+  // Sử dụng useEffect để chỉ cập nhật thông tin người dùng khi user thay đổi
+  // hoặc khi component được mount lần đầu
+  React.useEffect(() => {
+    if (user) {
+      // Lưu thông tin người dùng vào state
+      setUserInfo({
+        name: user.username || "Admin",
+        email: user.username ? `${user.username}@nltech.vn` : "admin@nltech.vn",
+        avatar: "/NLTECH.png",
+      })
+    }
+  }, [user?.id]) // Chỉ chạy lại khi user.id thay đổi, không phải toàn bộ user object
 
   return (
     <Sidebar

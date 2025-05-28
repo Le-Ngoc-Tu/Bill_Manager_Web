@@ -57,7 +57,7 @@ export function NavMain({
                     }`}
                   onClick={() => handleNavigation(item.url)}
                 >
-                  {item.icon && <item.icon className="size-6 sm:size-8 md:size-10 mr-2 sm:mr-3 transition-colors duration-300" />}
+                  {item.icon && <item.icon className="size-5 sm:size-6 md:size-7 mr-2 sm:mr-3 transition-colors duration-300" />}
                   <span className="text-sm sm:text-base md:text-[18px] transition-colors duration-300">{item.title}</span>
                 </SidebarMenuButton>
               </SidebarMenuItem>

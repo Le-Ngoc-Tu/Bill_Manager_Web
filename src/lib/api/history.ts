@@ -1,5 +1,4 @@
-import axios from "axios";
-import { API_URL, getAuthHeader } from "./config";
+import apiClient, { API_URL } from "./config";
 
 // Định nghĩa kiểu dữ liệu
 export interface HistoryItem {
@@ -32,9 +31,7 @@ export const getHistory = async (params?: Record<string, string>) => {
       url = `${url}?${queryString}`;
     }
 
-    const response = await axios.get(url, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(url);
 
     // Chuyển đổi dữ liệu để phù hợp với giao diện
     if (response.data) {
@@ -73,9 +70,7 @@ export const getHistory = async (params?: Record<string, string>) => {
 // Lấy chi tiết lịch sử
 export const getHistoryById = async (id: number) => {
   try {
-    const response = await axios.get(`${API_URL}/logs/${id}`, {
-      headers: getAuthHeader()
-    });
+    const response = await apiClient.get(`/logs/${id}`);
 
     // Chuyển đổi dữ liệu để phù hợp với giao diện
     if (response.data) {

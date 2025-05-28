@@ -11,7 +11,16 @@ import {
   ColumnFiltersState,
   getFilteredRowModel,
   VisibilityState,
+  Row,
 } from "@tanstack/react-table"
+
+// Extend ColumnMeta interface để thêm getRowClassName
+declare module '@tanstack/react-table' {
+  interface ColumnMeta<TData, TValue> {
+    columnName?: string
+    getRowClassName?: (row: Row<TData>) => string
+  }
+}
 
 import {
   Table,
@@ -149,7 +158,7 @@ export function DataTable<TData, TValue>({
                       column.toggleVisibility(!!value)
                     }
                   >
-                    {(column.columnDef.meta as any)?.columnName || column.id}
+                    {column.columnDef.meta?.columnName || column.id}
                   </DropdownMenuCheckboxItem>
                 )
               })}
@@ -168,7 +177,7 @@ export function DataTable<TData, TValue>({
                 {headerGroup.headers.map((header, idx) => {
                   const isFirstCell = idx === 0;
                   const isLastCell = idx === headerGroup.headers.length - 1;
-                  let cellClassName = "text-white font-bold text-center text-sm md:text-base lg:text-lg";
+                  let cellClassName = "text-white font-bold text-center text-sm md:text-base";
 
                   if (isFirstCell) cellClassName += " rounded-tl-sm";
                   if (isLastCell) cellClassName += " rounded-tr-sm";
@@ -193,11 +202,18 @@ export function DataTable<TData, TValue>({
                 <TableRow
                   key={row.id}
                   data-state={row.getIsSelected() && "selected"}
-                  className={onRowClick ? "cursor-pointer hover:bg-gray-100" : ""}
+                  className={`${onRowClick ? "cursor-pointer hover:bg-gray-100" : ""} ${
+                    // Kiểm tra nếu có hàm getRowClassName trong meta của cột đầu tiên
+                    (() => {
+                      const firstCell = row.getVisibleCells()[0];
+                      const getRowClassName = firstCell?.column?.columnDef?.meta?.getRowClassName;
+                      return getRowClassName ? getRowClassName(row) : "";
+                    })()
+                  }`}
                   onClick={() => onRowClick && onRowClick(row.original)}
                 >
                   {row.getVisibleCells().map((cell) => (
-                    <TableCell key={cell.id} className="text-center text-sm md:text-base lg:text-lg">
+                    <TableCell key={cell.id} className="text-center text-sm md:text-base">
                       {flexRender(cell.column.columnDef.cell, cell.getContext())}
                     </TableCell>
                   ))}
@@ -205,7 +221,7 @@ export function DataTable<TData, TValue>({
               ))
             ) : (
               <TableRow>
-                <TableCell colSpan={columns.length} className="h-24 text-center text-sm md:text-base lg:text-lg">
+                <TableCell colSpan={columns.length} className="h-24 text-center text-sm md:text-base">
                   Không có dữ liệu
                 </TableCell>
               </TableRow>
@@ -214,7 +230,7 @@ export function DataTable<TData, TValue>({
         </Table>
       </div>
       <div className="flex flex-col sm:flex-row items-center justify-between py-2 md:py-4 gap-2 sm:gap-0">
-        <div className="text-sm md:text-base lg:text-lg text-muted-foreground">
+        <div className="text-sm md:text-base text-muted-foreground">
           {table.getFilteredSelectedRowModel().rows.length} trong{" "}
           {table.getFilteredRowModel().rows.length} dòng được chọn.
         </div>
@@ -230,7 +246,7 @@ export function DataTable<TData, TValue>({
                 table.resetRowSelection();
               }}
             >
-              <span className="text-sm md:text-base lg:text-lg">Xóa {table.getFilteredSelectedRowModel().rows.length} dòng</span>
+              <span className="text-sm md:text-base">Xóa {table.getFilteredSelectedRowModel().rows.length} dòng</span>
             </Button>
           )}
 
@@ -261,7 +277,7 @@ export function DataTable<TData, TValue>({
                       <PaginationLink
                         onClick={() => table.setPageIndex(page - 1)}
                         isActive={currentPage === page}
-                        className="text-sm md:text-base lg:text-lg"
+                        className="text-sm md:text-base"
                       >
                         {page}
                       </PaginationLink>
