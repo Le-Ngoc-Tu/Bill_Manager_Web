@@ -593,7 +593,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 if (inventoryResult && inventoryResult.success) {
                     const inventoryData = inventoryResult.data || [];
                     console.log("📦 Inventory items loaded:", inventoryData.length);
-                    console.log("📦 Sample inventory items:", inventoryData.slice(0, 3).map(item => ({
+                    console.log("📦 Sample inventory items:", inventoryData.slice(0, 3).map((item: Inventory) => ({
                         id: item.id,
                         name: item.item_name,
                         unit: item.unit,
