@@ -39,6 +39,9 @@ import {
 import { useAuth } from "@/lib/auth"
 import { useRouter } from "next/navigation"
 
+// Đảm bảo biến môi trường có giá trị mặc định
+const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:7010/api'
+
 export function NavUser({
   user,
 }: {
@@ -63,12 +66,20 @@ export function NavUser({
         if (storedUser) {
           const parsedUser = JSON.parse(storedUser)
           setCachedUserInfo(parsedUser)
+          console.log("Đã tải thông tin người dùng từ localStorage:", parsedUser)
         }
       } catch (error) {
         console.error("Error reading user from localStorage:", error)
       }
     }
-  }, [])
+  }, [authUser])
+
+  // Debug log để xem dữ liệu người dùng
+  useEffect(() => {
+    console.log("Auth User:", authUser)
+    console.log("Cached User:", cachedUserInfo)
+    console.log("Default User:", user)
+  }, [authUser, cachedUserInfo, user])
 
   const handleLogout = () => {
     logout()
@@ -78,6 +89,20 @@ export function NavUser({
   const handleOpenAccountDialog = () => {
     setShowAccountDialog(true)
   }
+
+  // Hàm lấy URL avatar với kiểm tra null và undefined
+  const getAvatarUrl = (avatarPath: string | null | undefined) => {
+    if (!avatarPath) return null
+    const baseUrl = BACKEND_URL.replace('/api', '')
+    return `${baseUrl}/api/avatar/${avatarPath.split('/').pop()}`
+  }
+
+  // Lấy thông tin người dùng ưu tiên từ authUser, sau đó từ cache, cuối cùng từ prop
+  const userName = authUser?.fullname || cachedUserInfo?.fullname || user.name
+  const userEmail = authUser?.email || cachedUserInfo?.email || user.email
+  const userAvatar = authUser?.avatar || cachedUserInfo?.avatar
+  const avatarUrl = userAvatar ? getAvatarUrl(userAvatar) : user.avatar
+  const userInitials = userName ? userName.substring(0, 2).toUpperCase() : "UN"
 
   return (
     <>
@@ -90,28 +115,24 @@ export function NavUser({
                 className="data-[state=open]:bg-sidebar-accent data-[state=open]:text-sidebar-accent-foreground py-2 sm:py-3"
               >
                 <Avatar className="h-8 w-8 sm:h-10 sm:w-10 rounded-lg">
-                  {authUser?.avatar || cachedUserInfo?.avatar ? (
+                  {avatarUrl ? (
                     <AvatarImage
-                      src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
-                      alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                      src={avatarUrl}
+                      alt={userName}
                       crossOrigin="anonymous"
                     />
                   ) : (
-                    <AvatarImage
-                      src={user.avatar}
-                      alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
-                    />
+                    <AvatarFallback className="rounded-lg font-semibold text-sm sm:text-base avatar-gray">
+                      {userInitials}
+                    </AvatarFallback>
                   )}
-                  <AvatarFallback className="rounded-lg font-semibold text-sm sm:text-base avatar-gray">
-                    {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
-                  </AvatarFallback>
                 </Avatar>
                 <div className="grid flex-1 text-left leading-tight">
                   <span className="truncate font-medium text-sm sm:text-base">
-                    {authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                    {userName}
                   </span>
                   <span className="text-muted-foreground truncate text-xs sm:text-sm">
-                    {authUser?.email || cachedUserInfo?.email || user.email}
+                    {userEmail}
                   </span>
                 </div>
                 <IconDotsVertical className="ml-auto size-4 sm:size-5" />
@@ -126,28 +147,24 @@ export function NavUser({
               <DropdownMenuLabel className="p-0 font-normal">
                 <div className="flex items-center gap-2 px-1 py-2 text-left">
                   <Avatar className="h-10 w-10 rounded-lg">
-                    {authUser?.avatar || cachedUserInfo?.avatar ? (
+                    {avatarUrl ? (
                       <AvatarImage
-                        src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
-                        alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                        src={avatarUrl}
+                        alt={userName}
                         crossOrigin="anonymous"
                       />
                     ) : (
-                      <AvatarImage
-                        src={user.avatar}
-                        alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
-                      />
+                      <AvatarFallback className="rounded-lg font-semibold text-base avatar-gray">
+                        {userInitials}
+                      </AvatarFallback>
                     )}
-                    <AvatarFallback className="rounded-lg font-semibold text-base avatar-gray">
-                      {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
-                    </AvatarFallback>
                   </Avatar>
                   <div className="grid flex-1 text-left leading-tight">
                     <span className="truncate font-medium text-base">
-                      {authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                      {userName}
                     </span>
                     <span className="text-muted-foreground truncate text-sm">
-                      {authUser?.email || cachedUserInfo?.email || user.email}
+                      {userEmail}
                     </span>
                   </div>
                 </div>
@@ -187,21 +204,17 @@ export function NavUser({
           <div className="mt-4 flex flex-col space-y-4">
             <div className="flex items-center justify-center mb-4">
               <Avatar className="h-24 w-24 rounded-lg">
-                {authUser?.avatar || cachedUserInfo?.avatar ? (
+                {avatarUrl ? (
                   <AvatarImage
-                    src={`${process.env.NEXT_PUBLIC_BACKEND_URL.replace('/api', '')}/api/avatar/${(authUser?.avatar || cachedUserInfo?.avatar).split('/').pop()}`}
-                    alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
+                    src={avatarUrl}
+                    alt={userName}
                     crossOrigin="anonymous"
                   />
                 ) : (
-                  <AvatarImage
-                    src={user.avatar}
-                    alt={authUser?.fullname || cachedUserInfo?.fullname || user.name}
-                  />
+                  <AvatarFallback className="rounded-lg text-2xl font-semibold avatar-gray">
+                    {userInitials}
+                  </AvatarFallback>
                 )}
-                <AvatarFallback className="rounded-lg text-2xl font-semibold avatar-gray">
-                  {(authUser?.fullname || cachedUserInfo?.fullname || user.name).substring(0, 2).toUpperCase()}
-                </AvatarFallback>
               </Avatar>
             </div>
 
@@ -217,7 +230,7 @@ export function NavUser({
               <IconUserCircle className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Họ tên</span>
-                <span className="font-medium">{authUser?.fullname || cachedUserInfo?.fullname || user.name}</span>
+                <span className="font-medium">{userName}</span>
               </div>
             </div>
 
@@ -225,7 +238,7 @@ export function NavUser({
               <IconMail className="size-5 text-muted-foreground" />
               <div className="flex flex-col">
                 <span className="text-sm text-muted-foreground">Email</span>
-                <span className="font-medium">{authUser?.email || cachedUserInfo?.email || user.email}</span>
+                <span className="font-medium">{userEmail}</span>
               </div>
             </div>
 
