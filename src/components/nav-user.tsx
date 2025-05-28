@@ -7,6 +7,7 @@ import {
   IconUserCircle,
   IconMail,
   IconShield,
+  IconRefresh,
 } from "@tabler/icons-react"
 
 import {
@@ -38,6 +39,9 @@ import {
 } from "@/components/ui/dialog"
 import { useAuth } from "@/lib/auth"
 import { useRouter } from "next/navigation"
+import { Button } from "@/components/ui/button"
+import apiClient from "@/lib/api/config"
+import { toast } from "sonner"
 
 // Đảm bảo biến môi trường có giá trị mặc định
 const BACKEND_URL = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:7010/api'
@@ -56,28 +60,29 @@ export function NavUser({
   const router = useRouter()
   const [showAccountDialog, setShowAccountDialog] = useState(false)
   const [cachedUserInfo, setCachedUserInfo] = useState<any>(null)
+  const [refreshing, setRefreshing] = useState(false)
 
   // Sử dụng useEffect để lấy thông tin người dùng từ localStorage khi component mount
   useEffect(() => {
-    // Chỉ lấy từ localStorage nếu authUser không có sẵn
-    if (!authUser?.fullname && !cachedUserInfo) {
-      try {
-        const storedUser = localStorage.getItem("user")
-        if (storedUser) {
-          const parsedUser = JSON.parse(storedUser)
-          setCachedUserInfo(parsedUser)
-          console.log("Đã tải thông tin người dùng từ localStorage:", parsedUser)
-        }
-      } catch (error) {
-        console.error("Error reading user from localStorage:", error)
+    try {
+      const storedUser = localStorage.getItem("user")
+      if (storedUser) {
+        const parsedUser = JSON.parse(storedUser)
+        setCachedUserInfo(parsedUser)
+        console.log("Đã tải thông tin người dùng từ localStorage:", parsedUser)
+        console.log("Fullname từ localStorage:", parsedUser.fullname)
       }
+    } catch (error) {
+      console.error("Error reading user from localStorage:", error)
     }
-  }, [authUser])
+  }, [])
 
   // Debug log để xem dữ liệu người dùng
   useEffect(() => {
     console.log("Auth User:", authUser)
+    console.log("Auth User Fullname:", authUser?.fullname)
     console.log("Cached User:", cachedUserInfo)
+    console.log("Cached User Fullname:", cachedUserInfo?.fullname)
     console.log("Default User:", user)
   }, [authUser, cachedUserInfo, user])
 
@@ -90,6 +95,41 @@ export function NavUser({
     setShowAccountDialog(true)
   }
 
+  // Hàm làm mới thông tin người dùng từ API
+  const refreshUserInfo = async () => {
+    if (!authUser?.id) {
+      toast.error("Không thể làm mới thông tin người dùng")
+      return
+    }
+    
+    setRefreshing(true)
+    try {
+      const response = await apiClient.get(`/users/${authUser.id}`)
+      const userData = response.data.data || response.data
+      
+      // Cập nhật dữ liệu người dùng trong localStorage
+      const currentUser = JSON.parse(localStorage.getItem("user") || "{}")
+      const updatedUser = {
+        ...currentUser,
+        fullname: userData.fullname,
+        email: userData.email,
+        avatar: userData.avatar,
+        role_name: userData.role_name,
+        userDetailsLoaded: true
+      }
+      
+      localStorage.setItem("user", JSON.stringify(updatedUser))
+      setCachedUserInfo(updatedUser)
+      
+      toast.success("Đã làm mới thông tin người dùng")
+    } catch (error) {
+      console.error("Lỗi khi làm mới thông tin người dùng:", error)
+      toast.error("Không thể làm mới thông tin người dùng")
+    } finally {
+      setRefreshing(false)
+    }
+  }
+
   // Hàm lấy URL avatar với kiểm tra null và undefined
   const getAvatarUrl = (avatarPath: string | null | undefined) => {
     if (!avatarPath) return null
@@ -97,8 +137,20 @@ export function NavUser({
     return `${baseUrl}/api/avatar/${avatarPath.split('/').pop()}`
   }
 
-  // Lấy thông tin người dùng ưu tiên từ authUser, sau đó từ cache, cuối cùng từ prop
-  const userName = authUser?.fullname || cachedUserInfo?.fullname || user.name
+  // Ưu tiên sử dụng fullname và đảm bảo không sử dụng username nếu có fullname
+  const getDisplayName = () => {
+    // Ưu tiên fullname từ authUser
+    if (authUser?.fullname) return authUser.fullname
+    
+    // Kiểm tra trong cachedUserInfo
+    if (cachedUserInfo?.fullname) return cachedUserInfo.fullname
+    
+    // Fallback: Hiển thị từ prop user.name hoặc username nếu name không có
+    return user.name || authUser?.username || cachedUserInfo?.username || "Chưa có thông tin"
+  }
+
+  // Lấy thông tin người dùng với ưu tiên cao cho fullname
+  const userName = getDisplayName()
   const userEmail = authUser?.email || cachedUserInfo?.email || user.email
   const userAvatar = authUser?.avatar || cachedUserInfo?.avatar
   const avatarUrl = userAvatar ? getAvatarUrl(userAvatar) : user.avatar
@@ -178,6 +230,14 @@ export function NavUser({
                   <IconUserCircle className="mr-2 size-5" />
                   Tài khoản
                 </DropdownMenuItem>
+                <DropdownMenuItem
+                  className="py-2.5"
+                  onClick={refreshUserInfo}
+                  disabled={refreshing}
+                >
+                  <IconRefresh className={`mr-2 size-5 ${refreshing ? "animate-spin" : ""}`} />
+                  {refreshing ? "Đang làm mới..." : "Làm mới thông tin"}
+                </DropdownMenuItem>
               </DropdownMenuGroup>
               <DropdownMenuSeparator />
               <DropdownMenuItem
@@ -249,6 +309,11 @@ export function NavUser({
                 <span className="font-medium">{authUser?.role_name || cachedUserInfo?.role_name || authUser?.role_id || cachedUserInfo?.role_id || "Người dùng"}</span>
               </div>
             </div>
+
+            <Button onClick={refreshUserInfo} disabled={refreshing} className="w-full">
+              <IconRefresh className={`mr-2 size-5 ${refreshing ? "animate-spin" : ""}`} />
+              {refreshing ? "Đang làm mới..." : "Làm mới thông tin"}
+            </Button>
           </div>
         </DialogContent>
       </Dialog>
