@@ -1,12 +1,7 @@
 "use client"
 
-import { AppSidebar } from "@/components/app-sidebar"
-import { SiteHeader } from "@/components/site-header"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { useAuth } from "@/lib/auth"
+import React from "react"
 import { usePageTitle } from "@/lib/page-title-context"
-import { useIsMobile } from "@/hooks/use-mobile"
-import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -47,9 +42,6 @@ interface Inventory {
 */
 
 export default function ImportsPage() {
-  const isMobile = useIsMobile()
-  const { user, loading } = useAuth()
-  const router = useRouter()
   const { setTitle } = usePageTitle()
 
   // State cho dữ liệu và UI
@@ -67,12 +59,6 @@ export default function ImportsPage() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [isFiltering, setIsFiltering] = useState(false)
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login")
-    }
-  }, [loading, user, router])
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
@@ -284,57 +270,37 @@ export default function ImportsPage() {
 
   // Sử dụng các hàm định dạng từ utils
 
-  if (!user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-        <p className="mt-4 text-lg">Đang chuyển hướng...</p>
-      </div>
-    )
-  }
-
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": isMobile ? "calc(var(--spacing) * 60)" : "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col p-2 sm:p-3 md:p-4 lg:p-6 overflow-x-hidden">
-          <div className="mb-6">
-            {/* Bỏ nút thêm hóa đơn ở đây vì đã được thêm vào DataTable */}
+    <div>
+      <div className="mb-6">
+      {/* Bỏ nút thêm hóa đơn ở đây vì đã được thêm vào DataTable */}
 
-            {/* Hiển thị lỗi nếu có */}
-            {error && (
-              <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
-                {error}
-              </div>
-            )}
+      {/* Hiển thị lỗi nếu có */}
+      {error && (
+        <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
+          {error}
+        </div>
+      )}
 
-            {/* Bộ lọc nâng cao */}
-            <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-              <Button
-                variant="outline"
-                onClick={() => setIsFilterModalOpen(true)}
-                className="w-full sm:w-auto h-10 md:h-12 text-sm md:text-base"
-              >
-                <FaFilter className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-                Lọc theo ngày
-              </Button>
+      {/* Bộ lọc nâng cao */}
+      <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
+        <Button
+          variant="outline"
+          onClick={() => setIsFilterModalOpen(true)}
+          className="w-full sm:w-auto h-10 md:h-12 text-sm md:text-base"
+        >
+          <FaFilter className="mr-1 h-3 w-3 md:h-4 md:w-4" />
+          Lọc theo ngày
+        </Button>
 
-              {/* Hiển thị thông tin bộ lọc đang áp dụng */}
-              {(startDate || endDate) && (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                  <span>Bộ lọc: </span>
-                  {startDate && (
-                    <Badge variant="outline" className="font-normal">
-                      Ngày lập hóa đơn từ: {format(startDate, 'dd/MM/yyyy')}
-                    </Badge>
+        {/* Hiển thị thông tin bộ lọc đang áp dụng */}
+        {(startDate || endDate) && (
+          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
+            <span>Bộ lọc: </span>
+            {startDate && (
+              <Badge variant="outline" className="font-normal">
+                Ngày lập hóa đơn từ: {format(startDate, 'dd/MM/yyyy')}
+              </Badge>
                   )}
                   {endDate && (
                     <Badge variant="outline" className="font-normal">
@@ -410,7 +376,7 @@ export default function ImportsPage() {
             {/* Phân trang đã được xử lý bởi DataTable */}
           </div>
 
-          {/* Modal xác nhận xóa */}
+        {/* Modal xác nhận xóa */}
           <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
             <DialogContent className="max-w-[95vw] sm:max-w-[500px]">
               <DialogHeader>
@@ -735,8 +701,6 @@ export default function ImportsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    </div>
   )
 }

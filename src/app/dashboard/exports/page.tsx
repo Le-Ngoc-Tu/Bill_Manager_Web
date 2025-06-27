@@ -1,12 +1,7 @@
 "use client"
 
-import { AppSidebar } from "@/components/app-sidebar"
-import { SiteHeader } from "@/components/site-header"
-import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
-import { useAuth } from "@/lib/auth"
+import React from "react"
 import { usePageTitle } from "@/lib/page-title-context"
-import { useIsMobile } from "@/hooks/use-mobile"
-import { useRouter } from "next/navigation"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
@@ -27,9 +22,6 @@ import { ExportForm } from "@/components/forms/ExportForm"
 import { getExports, getExportById, createExport, updateExport, deleteExport, ExportInvoice, ExportFormData } from "@/lib/api/exports"
 
 export default function ExportsPage() {
-  const isMobile = useIsMobile()
-  const { user, loading } = useAuth()
-  const router = useRouter()
   const { setTitle } = usePageTitle()
 
   // State cho dữ liệu và UI
@@ -47,12 +39,6 @@ export default function ExportsPage() {
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [isFiltering, setIsFiltering] = useState(false)
-
-  useEffect(() => {
-    if (!loading && !user) {
-      router.push("/login")
-    }
-  }, [loading, user, router])
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
@@ -259,29 +245,9 @@ export default function ExportsPage() {
 
   // Sử dụng các hàm định dạng từ utils
 
-  if (!user) {
-    return (
-      <div className="flex min-h-screen items-center justify-center">
-        <div className="h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-        <p className="mt-4 text-lg">Đang chuyển hướng...</p>
-      </div>
-    )
-  }
-
   return (
-    <SidebarProvider
-      style={
-        {
-          "--sidebar-width": isMobile ? "calc(var(--spacing) * 60)" : "calc(var(--spacing) * 72)",
-          "--header-height": "calc(var(--spacing) * 12)",
-        } as React.CSSProperties
-      }
-    >
-      <AppSidebar variant="inset" />
-      <SidebarInset>
-        <SiteHeader />
-        <div className="flex flex-1 flex-col p-2 sm:p-3 md:p-4 lg:p-6 overflow-x-hidden">
-          <div className="mb-6">
+    <div>
+      <div className="mb-6">
             {/* Hiển thị lỗi nếu có */}
             {error && (
               <div className="bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded mb-4">
@@ -381,7 +347,7 @@ export default function ExportsPage() {
             />
           </div>
 
-          {/* Modal xóa hóa đơn */}
+        {/* Modal xóa hóa đơn */}
           <Dialog open={isDeleteModalOpen} onOpenChange={setIsDeleteModalOpen}>
             <DialogContent className="max-w-[95vw] sm:max-w-[500px]">
               <DialogHeader>
@@ -723,8 +689,6 @@ export default function ExportsPage() {
               </DialogFooter>
             </DialogContent>
           </Dialog>
-        </div>
-      </SidebarInset>
-    </SidebarProvider>
+    </div>
   )
 }
