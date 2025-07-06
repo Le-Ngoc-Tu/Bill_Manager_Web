@@ -109,7 +109,7 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
   },
   {
-    accessorKey: "buyer_name",
+    accessorKey: "customer",
     header: ({ column }) => {
       return (
         <div className="text-center">
@@ -126,7 +126,7 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
     cell: ({ row }) => {
       const item = row.original
-      return <div>{item.details && item.details.length > 0 ? item.details[0].buyer_name : ''}</div>
+      return <div>{item.customer?.name || 'Chưa có thông tin'}</div>
     },
     meta: {
       columnName: "Người mua"

@@ -58,7 +58,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const config: TokenMonitorConfig = {
       ...DEFAULT_TOKEN_MONITOR_CONFIG,
       onTokenExpired: () => {
-        console.log("Token expired, logging out user");
+        console.log("🚨 TokenMonitor: Refresh token expired, logging out user");
         toast.error("Phiên đăng nhập đã hết hạn", {
           description: "Bạn sẽ được chuyển hướng đến trang đăng nhập",
           className: "text-lg font-medium",
@@ -67,14 +67,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         logout();
       },
       onTokenNearExpiry: async () => {
-        console.log("Token near expiry, attempting refresh");
+        console.log("⏰ TokenMonitor: Access token near expiry, attempting refresh");
         try {
           await forceTokenRefresh();
+          console.log("✅ TokenMonitor: Token refreshed successfully");
           toast.success("Phiên đăng nhập đã được gia hạn", {
             className: "text-lg font-medium"
           });
         } catch (error) {
-          console.error("Failed to refresh token:", error);
+          console.error("❌ TokenMonitor: Failed to refresh token:", error);
           toast.error("Không thể gia hạn phiên đăng nhập", {
             description: "Vui lòng đăng nhập lại",
             className: "text-lg font-medium",

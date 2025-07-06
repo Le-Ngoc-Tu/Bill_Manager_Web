@@ -1,4 +1,4 @@
-import apiClient, { API_URL } from "./config";
+import apiClient from "./config";
 import { format } from "date-fns";
 
 // Định nghĩa kiểu dữ liệu
@@ -6,7 +6,6 @@ export interface ExportDetail {
   id?: number;
   export_id?: number;
   inventory_id?: number | null;
-  customer_id?: number | null;
   category: "HH" | "CP";
   item_name: string;
   unit: string;
@@ -16,12 +15,10 @@ export interface ExportDetail {
   tax_rate: string;
   tax_amount?: number;
   total_after_tax?: number;
-  buyer_name?: string;
-  buyer_tax_code?: string;
   inventory?: any;
-  customer?: any;
   // Trường tạm thời cho UI
   isEditing?: boolean;
+  // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
 }
 
 export interface ExportInvoice {
@@ -37,6 +34,25 @@ export interface ExportInvoice {
   createdAt: string;
   updatedAt: string;
   details: ExportDetail[];
+  // Added supplier/customer info at invoice level
+  supplier_id?: number | null;
+  customer_id?: number | null;
+  supplier?: {
+    id: number;
+    name: string;
+    tax_code?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  };
+  customer?: {
+    id: number;
+    name: string;
+    tax_code?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  };
 }
 
 export interface ExportFormData {
@@ -45,6 +61,20 @@ export interface ExportFormData {
   description?: string;
   note?: string;
   details: ExportDetail[];
+  // Added supplier/customer info at invoice level
+  supplier_id?: number | null;
+  customer_id?: number | null;
+  seller_name?: string;
+  seller_tax_code?: string;
+  seller_address?: string;
+  buyer_name?: string;
+  buyer_tax_code?: string;
+  buyer_address?: string;
+  // Các trường tổng tiền của hóa đơn
+  total_before_tax?: number;
+  total_tax?: number;
+  total_after_tax?: number;
+  is_invoice_totals_manually_edited?: boolean;
 }
 
 // Lấy danh sách hóa đơn xuất kho
@@ -89,9 +119,9 @@ export const createExport = async (data: ExportFormData) => {
     const noteValue = data.note === undefined || data.note === null ? "" : data.note;
 
     const submitData = {
-      invoice_number: data.invoice_number,
+      ...data,
       invoice_date: format(data.invoice_date, 'yyyy-MM-dd'),
-      description: data.description || "",
+      // Đảm bảo trường note được gửi đúng cách
       note: noteValue,
       details: data.details.map(detail => ({
         ...detail,
@@ -102,23 +132,18 @@ export const createExport = async (data: ExportFormData) => {
         unit: detail.unit || "",
         category: detail.category || "HH",
         tax_rate: detail.tax_rate || "0%",
-        // Bỏ các trường tính toán để backend tự tính
-        total_before_tax: undefined,
-        tax_amount: undefined,
-        total_after_tax: undefined,
-        // Đảm bảo các trường buyer_name và buyer_tax_code được gửi đi
-        buyer_name: detail.buyer_name || "",
-        buyer_tax_code: detail.buyer_tax_code || ""
+        // Gửi các trường tính toán đã được frontend xử lý
+        total_before_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+        tax_amount: Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+          (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+        total_after_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+          Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+          (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100)
+        // Removed buyer_name and buyer_tax_code - now handled at invoice level
       }))
     };
 
-    console.log("Create submitData:", submitData);
-    console.log("Note field in create submitData:", submitData.note);
-
     const response = await apiClient.post(`/exports`, submitData);
-
-    console.log("Create API response:", response.data);
-    console.log("Note field in create API response:", response.data?.data?.note);
     return response.data;
   } catch (error) {
     console.error("Error creating export:", error);
@@ -137,9 +162,9 @@ export const updateExport = async (id: number, data: ExportFormData) => {
     const noteValue = data.note === undefined || data.note === null ? "" : data.note;
 
     const submitData = {
-      invoice_number: data.invoice_number,
+      ...data,
       invoice_date: format(data.invoice_date, 'yyyy-MM-dd'),
-      description: data.description || "",
+      // Đảm bảo trường note được gửi đúng cách
       note: noteValue,
       details: data.details.map(detail => ({
         ...detail,
@@ -150,27 +175,18 @@ export const updateExport = async (id: number, data: ExportFormData) => {
         unit: detail.unit || "",
         category: detail.category || "HH",
         tax_rate: detail.tax_rate || "0%",
-        // Bỏ các trường tính toán để backend tự tính
-        total_before_tax: undefined,
-        tax_amount: undefined,
-        total_after_tax: undefined,
-        // Đảm bảo các trường buyer_name và buyer_tax_code được gửi đi
-        buyer_name: detail.buyer_name || "",
-        buyer_tax_code: detail.buyer_tax_code || ""
+        // Gửi các trường tính toán đã được frontend xử lý
+        total_before_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+        tax_amount: Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+          (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+        total_after_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+          Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+          (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100)
+        // Removed buyer_name and buyer_tax_code - now handled at invoice level
       }))
     };
 
-    console.log("Prepared submitData:", submitData);
-    console.log("Note field in submitData:", submitData.note);
-
-    // In ra URL và dữ liệu gửi đi để debug
-    console.log(`PUT /exports/${id}`);
-    console.log("Request body:", JSON.stringify(submitData, null, 2));
-
     const response = await apiClient.put(`/exports/${id}`, submitData);
-
-    console.log("API response:", response.data);
-    console.log("Note field in API response:", response.data?.data?.note);
     return response.data;
   } catch (error) {
     console.error("Error updating export:", error);
@@ -226,23 +242,5 @@ export const deleteExportDetail = async (exportId: number, detailId: number) => 
   }
 };
 
-// Hàm tính toán thuế dựa trên thuế suất
-function calculateTaxAmount(amount: number, taxRate: string): number {
-  if (taxRate === "KCT") return 0;
-
-  // Làm tròn số tiền trước khi tính thuế
-  const roundedAmount = Math.round(amount);
-
-  const rate = parseFloat(taxRate.replace("%", "")) / 100;
-  // Làm tròn số tiền thuế
-  return Math.round(roundedAmount * rate);
-}
-
-// Hàm tính tổng sau thuế
-function calculateTotalAfterTax(amount: number, taxRate: string): number {
-  // Làm tròn số tiền trước khi tính thuế
-  const roundedAmount = Math.round(amount);
-
-  const taxAmount = calculateTaxAmount(roundedAmount, taxRate);
-  return roundedAmount + taxAmount;
-}
+// Các function tính toán đã được chuyển hoàn toàn sang frontend components
+// Backend chỉ nhận dữ liệu đã tính toán từ frontend

@@ -6,9 +6,9 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { DatePicker } from "@/components/ui/date-picker"
+
+import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
+import FinancialSummaryCards from "@/components/ui/FinancialSummaryCards"
 import { FaPlus, FaFilter } from "react-icons/fa"
 import { ImportForm } from "@/components/forms/ImportForm"
 import { DataTable } from "@/components/ui/data-table"
@@ -54,63 +54,40 @@ export default function ImportsPage() {
   const [selectedImports, setSelectedImports] = useState<ImportInvoice[]>([])
   const [error, setError] = useState<string | null>(null)
 
-  // State cho bộ lọc nâng cao
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
+  // State cho date filtering
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [isFiltering, setIsFiltering] = useState(false)
+
+  // State cho frontend filtering
+  const [allImports, setAllImports] = useState<ImportInvoice[]>([])
+  const [filteredImports, setFilteredImports] = useState<ImportInvoice[]>([])
+  const [searchTerm, setSearchTerm] = useState("")
+
+  // State cho financial summary
+  const [financialSummary, setFinancialSummary] = useState({
+    totalBeforeTax: 0,
+    totalTax: 0,
+    totalAfterTax: 0
+  })
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
     setTitle("Hóa đơn nhập kho")
   }, [setTitle])
 
-  // Fetch data from API GET /imports
-  const fetchData = async (resetFilters = false) => {
+  // Fetch data from API GET /imports - chỉ lấy tất cả dữ liệu một lần
+  const fetchData = async () => {
     try {
       setIsFiltering(true)
-      // Nếu resetFilters = true, đặt lại các bộ lọc
-      if (resetFilters) {
-        setStartDate(undefined)
-        setEndDate(undefined)
-      }
 
-      // Tạo đối tượng chứa các tham số tìm kiếm
-      const searchParams: Record<string, string> = {}
-
-      // Chỉ thêm tham số nếu không phải là reset filters
-      if (!resetFilters) {
-        // Thêm tham số ngày bắt đầu nếu có
-        if (startDate) {
-          // Đảm bảo định dạng ngày chính xác và đặt giờ về 00:00:00
-          const formattedStartDate = format(startOfDay(startDate), 'yyyy-MM-dd')
-          searchParams.startDate = formattedStartDate
-        }
-
-        // Thêm tham số ngày kết thúc nếu có
-        if (endDate) {
-          // Đảm bảo định dạng ngày chính xác và đặt giờ về 23:59:59
-          const formattedEndDate = format(endOfDay(endDate), 'yyyy-MM-dd')
-          searchParams.endDate = formattedEndDate
-        }
-      }
-
-      // Đã bỏ lọc theo người bán
-
-      // Sử dụng API đã tách với các tham số tìm kiếm
-      const result = await getImports(searchParams)
+      // Lấy tất cả dữ liệu không có filter để frontend xử lý
+      const result = await getImports({})
 
       if (result && result.success) {
         const importData = result.data.imports || [];
-        setImports(importData);
-
-        // Hiển thị thông báo khi không tìm thấy kết quả
-        if (importData.length === 0 && (startDate || endDate)) {
-          toast.info("Không tìm thấy hóa đơn nào phù hợp với bộ lọc", {
-            className: "text-lg font-medium",
-            descriptionClassName: "text-base"
-          });
-        }
+        setAllImports(importData);
+        setFilteredImports(importData); // Khởi tạo filtered data
       } else {
         setError("Không thể tải dữ liệu hóa đơn nhập kho")
       }
@@ -122,11 +99,63 @@ export default function ImportsPage() {
     }
   }
 
+  // Frontend filtering function
+  const applyFilters = () => {
+    let filtered = [...allImports]
+
+    // Lọc theo ngày lập hóa đơn
+    if (startDate || endDate) {
+      filtered = filtered.filter(invoice => {
+        if (!invoice.invoice_date) return false
+
+        const invoiceDate = new Date(invoice.invoice_date)
+        const start = startDate ? startOfDay(startDate) : null
+        const end = endDate ? endOfDay(endDate) : null
+
+        if (start && end) {
+          return invoiceDate >= start && invoiceDate <= end
+        } else if (start) {
+          return invoiceDate >= start
+        } else if (end) {
+          return invoiceDate <= end
+        }
+        return true
+      })
+    }
+
+    // Lọc theo tìm kiếm (số hóa đơn + tên người bán)
+    if (searchTerm.trim()) {
+      const searchLower = searchTerm.toLowerCase().trim()
+      filtered = filtered.filter(invoice => {
+        const invoiceNumber = invoice.invoice_number?.toLowerCase() || ''
+        const supplierName = invoice.supplier?.name?.toLowerCase() || ''
+
+        return invoiceNumber.includes(searchLower) || supplierName.includes(searchLower)
+      })
+    }
+
+    setFilteredImports(filtered)
+
+    // Tính toán tổng hợp tài chính từ dữ liệu đã lọc
+    const financialSummary = {
+      totalBeforeTax: filtered.reduce((sum, invoice) => sum + (invoice.total_before_tax || 0), 0),
+      totalTax: filtered.reduce((sum, invoice) => sum + (invoice.total_tax || 0), 0),
+      totalAfterTax: filtered.reduce((sum, invoice) => sum + (invoice.total_after_tax || 0), 0)
+    }
+    setFinancialSummary(financialSummary)
+  }
+
   // Tải dữ liệu khi component được mount
   useEffect(() => {
     fetchData()
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  // Áp dụng filter khi có thay đổi
+  useEffect(() => {
+    applyFilters()
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [allImports, startDate, endDate, searchTerm])
 
   // Xử lý xóa hóa đơn
   const [isDeleting, setIsDeleting] = useState(false)
@@ -273,7 +302,67 @@ export default function ImportsPage() {
   return (
     <div>
       <div className="mb-6">
-      {/* Bỏ nút thêm hóa đơn ở đây vì đã được thêm vào DataTable */}
+        {/* Tổng hợp tài chính */}
+        <FinancialSummaryCards summary={financialSummary} />
+
+        {/* Bộ lọc thời gian */}
+        <div className="bg-white p-4 rounded-lg shadow-sm border mb-4">
+          <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+            <div className="flex flex-col sm:flex-row gap-4 flex-1">
+              <div className="flex-1 max-w-60">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Lọc theo ngày lập hóa đơn
+                </label>
+                <CustomDateRangePicker
+                  startDate={startDate}
+                  endDate={endDate}
+                  onStartDateChange={setStartDate}
+                  onEndDateChange={setEndDate}
+                  onRangeChange={(start, end) => {
+                    setStartDate(start)
+                    setEndDate(end)
+                  }}
+                  className="w-full"
+                  placeholder="Chọn khoảng thời gian"
+                />
+              </div>
+
+              <div className="flex-1 max-w-md">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Tìm kiếm
+                </label>
+                <input
+                  type="text"
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  placeholder="Tìm theo số hóa đơn hoặc tên người bán..."
+                  className="w-full h-10 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                />
+              </div>
+            </div>
+
+            <div className="flex items-center gap-2">
+              <Button
+                variant="outline"
+                onClick={() => {
+                  setStartDate(undefined)
+                  setEndDate(undefined)
+                  setSearchTerm("")
+                }}
+                className="h-10"
+              >
+                <FaFilter className="mr-2 h-4 w-4" />
+                Xóa bộ lọc
+              </Button>
+
+              <div className="text-sm bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
+                <span className="text-blue-600 font-medium">
+                  {filteredImports.length} / {allImports.length} hóa đơn
+                </span>
+              </div>
+            </div>
+          </div>
+        </div>
 
       {/* Hiển thị lỗi nếu có */}
       {error && (
@@ -282,46 +371,7 @@ export default function ImportsPage() {
         </div>
       )}
 
-      {/* Bộ lọc nâng cao */}
-      <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-        <Button
-          variant="outline"
-          onClick={() => setIsFilterModalOpen(true)}
-          className="w-full sm:w-auto h-10 md:h-12 text-sm md:text-base"
-        >
-          <FaFilter className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-          Lọc theo ngày
-        </Button>
 
-        {/* Hiển thị thông tin bộ lọc đang áp dụng */}
-        {(startDate || endDate) && (
-          <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-            <span>Bộ lọc: </span>
-            {startDate && (
-              <Badge variant="outline" className="font-normal">
-                Ngày lập hóa đơn từ: {format(startDate, 'dd/MM/yyyy')}
-              </Badge>
-                  )}
-                  {endDate && (
-                    <Badge variant="outline" className="font-normal">
-                      Ngày lập hóa đơn đến: {format(endDate, 'dd/MM/yyyy')}
-                    </Badge>
-                  )}
-
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => {
-                      // Gọi fetchData với tham số resetFilters = true để xóa bộ lọc và tải lại tất cả dữ liệu
-                      fetchData(true);
-                    }}
-                    className="h-6 px-2 text-xs"
-                  >
-                    Xóa bộ lọc
-                  </Button>
-                </div>
-              )}
-            </div>
 
             {/* Hiển thị trạng thái đang tải */}
             {isFiltering && (
@@ -337,7 +387,7 @@ export default function ImportsPage() {
                 onView: handleViewDetails,
                 onEdit: handleEdit,
                 onDelete: (id) => {
-                  const importToDelete = imports.find(item => item.id === id);
+                  const importToDelete = filteredImports.find(item => item.id === id);
                   if (importToDelete) {
                     setSelectedImport(importToDelete);
                     setIsDeleteModalOpen(true);
@@ -345,9 +395,9 @@ export default function ImportsPage() {
                 },
                 onDeleteMany: handleBatchDelete
               })}
-              data={imports}
-              searchColumn="invoice_number"
-              searchPlaceholder="Tìm kiếm số hóa đơn..."
+              data={filteredImports}
+              searchColumn=""
+              searchPlaceholder=""
               onDeleteSelected={handleBatchDelete}
               actionButton={
                 <Button
@@ -467,29 +517,70 @@ export default function ImportsPage() {
                       <p className="text-base md:text-xl font-bold mr-2">Ngày hóa đơn:</p>
                       <p className="text-base md:text-xl">{format(new Date(selectedImport.invoice_date), 'dd/MM/yyyy')}</p>
                     </div>
-                    {selectedImport.details && selectedImport.details.length > 0 && selectedImport.details[0].seller_name && (
-                      <div className="flex flex-col sm:col-span-2">
-                        <div className="flex items-center">
-                          <p className="text-base md:text-xl font-bold mr-2">Người bán:</p>
-                          <p className="text-base md:text-xl">{selectedImport.details[0].seller_name}</p>
-                        </div>
-                        {selectedImport.details[0].seller_tax_code && (
-                          <div className="flex items-center mt-1">
-                            <p className="text-base md:text-xl font-bold mr-2">Mã số thuế:</p>
-                            <p className="text-base md:text-xl">{selectedImport.details[0].seller_tax_code}</p>
+                  </div>
+
+                  {/* Thông tin người bán và người mua - hiển thị theo chiều ngang */}
+                  {(selectedImport.supplier || selectedImport.customer) && (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
+                      {selectedImport.supplier && (
+                        <div className="bg-gray-50 p-4 rounded-sm">
+                          <h4 className="text-sm md:text-base font-bold text-gray-700 mb-2">Thông tin người bán</h4>
+                          <div className="space-y-1">
+                            <div className="flex items-center">
+                              <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Tên:</p>
+                              <p className="text-sm md:text-base">{selectedImport.supplier.name}</p>
+                            </div>
+                            {selectedImport.supplier.tax_code && (
+                              <div className="flex items-center">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">MST:</p>
+                                <p className="text-sm md:text-base">{selectedImport.supplier.tax_code}</p>
+                              </div>
+                            )}
+                            {selectedImport.supplier.address && (
+                              <div className="flex items-start">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Địa chỉ:</p>
+                                <p className="text-sm md:text-base">{selectedImport.supplier.address}</p>
+                              </div>
+                            )}
                           </div>
-                        )}
-                      </div>
-                    )}
+                        </div>
+                      )}
+                      {selectedImport.customer && (
+                        <div className="bg-blue-50 p-4 rounded-sm">
+                          <h4 className="text-sm md:text-base font-bold text-gray-700 mb-2">Thông tin người mua</h4>
+                          <div className="space-y-1">
+                            <div className="flex items-center">
+                              <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Tên:</p>
+                              <p className="text-sm md:text-base">{selectedImport.customer.name}</p>
+                            </div>
+                            {selectedImport.customer.tax_code && (
+                              <div className="flex items-center">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">MST:</p>
+                                <p className="text-sm md:text-base">{selectedImport.customer.tax_code}</p>
+                              </div>
+                            )}
+                            {selectedImport.customer.address && (
+                              <div className="flex items-start">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Địa chỉ:</p>
+                                <p className="text-sm md:text-base">{selectedImport.customer.address}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 md:gap-6">
                   </div>
 
                   <div>
                     <h3 className="text-lg md:text-xl font-medium mb-2">Chi tiết hàng hóa</h3>
-                    <div className="overflow-hidden rounded-sm border max-w-full relative">
+                    <div className="overflow-hidden rounded border max-w-full relative">
                       <ScrollArea className="w-full h-[400px] overflow-x-auto">
                         <div className="relative w-full min-w-[800px]">
                         <Table className="w-full min-w-[800px]">
-                        <TableHeader className="bg-destructive rounded-t-sm sticky top-0 z-10">
+                        <TableHeader className="bg-destructive rounded-t sticky top-0 z-10">
                           <TableRow className="hover:bg-transparent">
                             <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center w-[30%] min-w-[150px]">Tên hàng</TableHead>
                             <TableHead className="text-white font-bold text-sm md:text-base py-2 md:py-3 text-center hidden md:table-cell w-[8%]">Loại</TableHead>
@@ -637,70 +728,7 @@ export default function ImportsPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Modal bộ lọc nâng cao */}
-          <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-lg md:text-xl">Bộ lọc nâng cao</DialogTitle>
-                <DialogDescription className="text-sm md:text-base">
-                  Lọc hóa đơn nhập kho theo ngày lập hóa đơn
-                </DialogDescription>
-              </DialogHeader>
 
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label htmlFor="start-date" className="text-sm md:text-base font-medium">Từ ngày (ngày lập hóa đơn)</Label>
-                  <DatePicker
-                    date={startDate}
-                    setDate={setStartDate}
-                    className="w-full"
-                    placeholder="Chọn ngày bắt đầu"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="end-date" className="text-sm md:text-base font-medium">Đến ngày (ngày lập hóa đơn)</Label>
-                  <DatePicker
-                    date={endDate}
-                    setDate={setEndDate}
-                    className="w-full"
-                    placeholder="Chọn ngày kết thúc"
-                  />
-                </div>
-
-
-              </div>
-
-              <DialogFooter className="flex gap-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Gọi fetchData với tham số resetFilters = true để xóa bộ lọc và tải lại tất cả dữ liệu
-                    fetchData(true);
-                    setIsFilterModalOpen(false);
-                  }}
-                >
-                  Xóa bộ lọc
-                </Button>
-                <Button
-                  onClick={() => {
-                    fetchData();
-                    setIsFilterModalOpen(false);
-                  }}
-                  disabled={isFiltering}
-                >
-                  {isFiltering ? (
-                    <>
-                      <div className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                      Đang xử lý...
-                    </>
-                  ) : (
-                    "Áp dụng"
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
     </div>
   )
 }

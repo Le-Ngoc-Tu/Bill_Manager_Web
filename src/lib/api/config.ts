@@ -151,40 +151,7 @@ apiClient.interceptors.response.use(
   async (error) => {
     const originalRequest = error.config;
 
-    // Check for specific authentication error codes
-    const errorCode = error.response?.data?.code;
-    const errorMessage = error.response?.data?.message;
-
-    // Immediate logout for specific error codes
-    const LOGOUT_ERROR_CODES = ['TOKEN_EXPIRED', 'INVALID_TOKEN', 'TOKEN_NOT_ACTIVE'];
-
-    if (LOGOUT_ERROR_CODES.includes(errorCode)) {
-      console.log(`Authentication error detected: ${errorCode}`);
-
-      // Clear tokens and redirect to login
-      localStorage.removeItem("accessToken");
-      localStorage.removeItem("refreshToken");
-      localStorage.removeItem("user");
-
-      if (typeof window !== 'undefined') {
-        // Use toast instead of alert for better UX
-        const { toast } = await import("sonner");
-        toast.error("Phiên đăng nhập đã hết hạn", {
-          description: "Bạn sẽ được chuyển hướng đến trang đăng nhập",
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        });
-
-        // Redirect after a short delay to allow toast to show
-        setTimeout(() => {
-          window.location.href = "/login";
-        }, 1000);
-      }
-
-      return Promise.reject(error);
-    }
-
-    // Kiểm tra lỗi 401 (Unauthorized) và chưa thử lại
+    // Kiểm tra lỗi 401 (Unauthorized) và chưa thử lại - ƯU TIÊN THỬ REFRESH TOKEN TRƯỚC
     if (
       error.response?.status === 401 &&
       !originalRequest._retry &&
@@ -199,8 +166,10 @@ apiClient.interceptors.response.use(
         isRefreshing = true;
 
         try {
+          console.log("🔄 Attempting to refresh token due to 401 error...");
           // Thực hiện refresh token
           const accessToken = await refreshToken();
+          console.log("✅ Token refreshed successfully");
           isRefreshing = false;
           onRefreshed(accessToken);
 
@@ -210,7 +179,7 @@ apiClient.interceptors.response.use(
           // Thử lại request gốc
           return apiClient(originalRequest);
         } catch (refreshError) {
-          console.error("Failed to refresh token on 401:", refreshError);
+          console.error("❌ Failed to refresh token on 401:", refreshError);
           isRefreshing = false;
 
           // Clear tokens and redirect
@@ -242,6 +211,35 @@ apiClient.interceptors.response.use(
           });
         });
       }
+    }
+
+    // Chỉ logout ngay lập tức khi không thể refresh token hoặc các lỗi khác không phải 401
+    const errorCode = error.response?.data?.code;
+    const LOGOUT_ERROR_CODES = ['INVALID_TOKEN', 'TOKEN_NOT_ACTIVE'];
+
+    // Chỉ logout ngay cho các lỗi không thể recover được (không bao gồm TOKEN_EXPIRED vì đã thử refresh ở trên)
+    if (LOGOUT_ERROR_CODES.includes(errorCode)) {
+      console.log(`Non-recoverable authentication error: ${errorCode}`);
+
+      // Clear tokens and redirect to login
+      localStorage.removeItem("accessToken");
+      localStorage.removeItem("refreshToken");
+      localStorage.removeItem("user");
+
+      if (typeof window !== 'undefined') {
+        const { toast } = await import("sonner");
+        toast.error("Phiên đăng nhập không hợp lệ", {
+          description: "Bạn sẽ được chuyển hướng đến trang đăng nhập",
+          className: "text-lg font-medium",
+          descriptionClassName: "text-base"
+        });
+
+        setTimeout(() => {
+          window.location.href = "/login";
+        }, 1000);
+      }
+
+      return Promise.reject(error);
     }
 
     return Promise.reject(error);

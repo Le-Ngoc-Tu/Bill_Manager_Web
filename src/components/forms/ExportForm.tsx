@@ -29,8 +29,10 @@ import {
 } from "@/components/ui/pagination"
 
 // Import các kiểu dữ liệu và API từ lib
+import type { Supplier } from "@/lib/api/suppliers"
 import type { Customer } from "@/lib/api/customers"
 import type { Inventory } from "@/lib/api/inventory"
+import { createSupplier, getSuppliers } from "@/lib/api/suppliers"
 import { createCustomer, getCustomers } from "@/lib/api/customers"
 import { createInventoryItem, getInventoryItems } from "@/lib/api/inventory"
 import { addExportDetail, updateExportDetail, deleteExportDetail, updateExport } from "@/lib/api/exports"
@@ -43,14 +45,11 @@ const exportDetailSchema = z.object({
     id: z.number().optional(),
     category: z.enum(["HH", "CP"]).optional().default("HH"),
     inventory_id: z.number().nullable().optional(),
-    customer_id: z.number().nullable().optional(),
     item_name: z.string().min(1, "Tên hàng hóa là bắt buộc"),
     unit: z.string().optional().default(""),
     quantity: z.coerce.number().min(0.001, "Số lượng phải lớn hơn 0"),
     price_before_tax: z.coerce.number().min(0, "Đơn giá không được âm"),
     tax_rate: z.string().default("0%"),
-    buyer_name: z.string().optional(),
-    buyer_tax_code: z.string().optional(),
     // Thêm các trường tính toán
     total_before_tax: z.coerce.number().min(0, "Tổng tiền trước thuế không được âm").optional(),
     tax_amount: z.coerce.number().min(0, "Thuế không được âm").optional(),
@@ -61,6 +60,7 @@ const exportDetailSchema = z.object({
     ocrTaskId: z.string().optional(),
     // Thêm flag để phân biệt dịch vụ lao động
     isLaborService: z.boolean().optional().default(false),
+    // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
 })
 
 const exportFormSchema = z.object({
@@ -77,15 +77,18 @@ const exportFormSchema = z.object({
     total_before_tax: z.number().optional(),
     total_tax: z.number().optional(),
     total_after_tax: z.number().optional(),
+    // Added supplier/customer info at invoice level
+    supplier_id: z.number().nullable().optional(),
+    customer_id: z.number().nullable().optional(),
+    seller_name: z.string().optional(),
+    seller_tax_code: z.string().optional(),
+    seller_address: z.string().optional(),
+    buyer_name: z.string().optional(),
+    buyer_tax_code: z.string().optional(),
+    buyer_address: z.string().optional(),
 })
 
-const customerFormSchema = z.object({
-    name: z.string().min(1, "Tên khách hàng là bắt buộc"),
-    tax_code: z.string().optional(),
-    address: z.string().optional(),
-    phone: z.string().optional(),
-    email: z.string().email("Email không hợp lệ").optional().or(z.literal("")),
-})
+
 
 const inventoryFormSchema = z.object({
     item_name: z.string().min(1, "Tên hàng hóa là bắt buộc"),
@@ -97,7 +100,6 @@ const inventoryFormSchema = z.object({
 })
 
 type ExportFormValues = z.infer<typeof exportFormSchema>
-type CustomerFormValues = z.infer<typeof customerFormSchema>
 type InventoryFormValues = z.infer<typeof inventoryFormSchema>
 
 interface ExportFormProps {
@@ -109,6 +111,7 @@ interface ExportFormProps {
 
 export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportFormProps) {
     const isViewMode = mode === "view"
+    const [suppliers, setSuppliers] = useState<Supplier[]>([])
     const [customers, setCustomers] = useState<Customer[]>([])
     const [inventoryItems, setInventoryItems] = useState<Inventory[]>([])
     const [loading, setLoading] = useState(false)
@@ -119,7 +122,6 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     const [priceWarning, setPriceWarning] = useState<{ [key: number]: string }>({})
 
     // State cho modal thêm mới
-    const [isCustomerModalOpen, setIsCustomerModalOpen] = useState(false)
     const [isInventoryModalOpen, setIsInventoryModalOpen] = useState(false)
     const [currentDetailIndex, setCurrentDetailIndex] = useState<number | null>(null)
 
@@ -165,8 +167,17 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     const [filteredCustomers, setFilteredCustomers] = useState<Customer[]>([])
     const [defaultCustomerId, setDefaultCustomerId] = useState<number | null>(null)
 
+    // State cho dropdown tìm kiếm người bán
+    const [showSellerDropdown, setShowSellerDropdown] = useState(false)
+    const [filteredSuppliers, setFilteredSuppliers] = useState<Supplier[]>([])
+    const [defaultSupplierId, setDefaultSupplierId] = useState<number | null>(null)
+    const [defaultSellerName, setDefaultSellerName] = useState("")
+    const [defaultSellerTaxCode, setDefaultSellerTaxCode] = useState("")
+
     // Ref cho input người mua
     const buyerInputRef = useRef<HTMLInputElement>(null)
+    // Ref cho input người bán
+    const sellerInputRef = useRef<HTMLInputElement>(null)
 
     // Refs cho các input tên hàng
     const itemInputRefs = useRef<(HTMLInputElement | null)[]>([])
@@ -423,19 +434,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         }
     }
 
-    // Khai báo form cho thêm mới customer và inventory
-    const customerForm = useForm<CustomerFormValues>({
-        resolver: zodResolver(customerFormSchema),
-        mode: "onSubmit",
-        reValidateMode: "onSubmit",
-        defaultValues: {
-            name: "",
-            tax_code: "",
-            address: "",
-            phone: "",
-            email: "",
-        }
-    })
+    // Khai báo form cho thêm mới inventory
 
     const inventoryForm = useForm<InventoryFormValues>({
         resolver: zodResolver(inventoryFormSchema),
@@ -465,9 +464,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     tax_rate: d.tax_rate || "0%",
                 })) || [],
                 // Thêm các trường tổng tiền của hóa đơn
-                total_before_tax: initialData.total_before_tax || undefined,
-                total_tax: initialData.tax_amount || undefined,
-                total_after_tax: initialData.total_after_tax || undefined,
+                total_before_tax: initialData.total_before_tax || 0,
+                total_tax: initialData.tax_amount || 0,
+                total_after_tax: initialData.total_after_tax || 0,
                 is_invoice_totals_manually_edited: initialData.is_invoice_totals_manually_edited || false,
             }
             : {
@@ -483,18 +482,18 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                         quantity: "",
                         price_before_tax: "",
                         tax_rate: "0%",
-                        customer_id: null,
+                        // Removed customer_id - now at invoice level
                         inventory_id: null,
-                        total_before_tax: undefined,
-                        tax_amount: undefined,
-                        total_after_tax: undefined,
+                        total_before_tax: 0,
+                        tax_amount: 0,
+                        total_after_tax: 0,
                         is_manually_edited: false,
                     },
                 ],
                 // Thêm các trường tổng tiền của hóa đơn
-                total_before_tax: undefined,
-                total_tax: undefined,
-                total_after_tax: undefined,
+                total_before_tax: 0,
+                total_tax: 0,
+                total_after_tax: 0,
                 is_invoice_totals_manually_edited: false,
             },
     })
@@ -561,13 +560,45 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         setTotalTaxDisplay(totalTax > 0 ? formatCurrencyInput(totalTax) : "");
         setTotalAfterTaxDisplay(totalAfterTax > 0 ? formatCurrencyInput(totalAfterTax) : "");
 
-        // Khởi tạo thông tin người mua mặc định từ chi tiết đầu tiên
-        if (initialData && initialData.details && initialData.details.length > 0) {
-            const firstDetail = initialData.details[0];
-            if (firstDetail.buyer_name) {
-                setDefaultBuyerName(firstDetail.buyer_name);
-                setDefaultBuyerTaxCode(firstDetail.buyer_tax_code || "");
-                setDefaultCustomerId(firstDetail.customer_id || null);
+        // Khởi tạo thông tin người bán và người mua mặc định
+        if (initialData) {
+            // Thiết lập thông tin người bán từ dữ liệu ban đầu
+            if (initialData.supplier?.name || initialData.seller_name) {
+                const sellerName = initialData.supplier?.name || initialData.seller_name || "";
+                const sellerTaxCode = initialData.supplier?.tax_code || initialData.seller_tax_code || "";
+                const sellerAddress = initialData.supplier?.address || initialData.seller_address || "";
+                const supplierId = initialData.supplier_id || null;
+
+                // Set seller info in form
+                form.setValue("seller_name", sellerName);
+                form.setValue("seller_tax_code", sellerTaxCode);
+                form.setValue("seller_address", sellerAddress);
+                if (supplierId) {
+                    form.setValue("supplier_id", supplierId);
+                }
+
+                // Sync state với form values
+                setDefaultSellerName(sellerName);
+                setDefaultSellerTaxCode(sellerTaxCode);
+                setDefaultSupplierId(supplierId);
+            }
+
+            // Thiết lập thông tin người mua từ dữ liệu ban đầu
+            if (initialData.customer?.name || initialData.buyer_name) {
+                const buyerName = initialData.customer?.name || initialData.buyer_name || "";
+                const buyerTaxCode = initialData.customer?.tax_code || initialData.buyer_tax_code || "";
+                const customerId = initialData.customer_id || null;
+
+                setDefaultBuyerName(buyerName);
+                setDefaultBuyerTaxCode(buyerTaxCode);
+                setDefaultCustomerId(customerId);
+
+                // Set buyer info in form
+                form.setValue("buyer_name", buyerName);
+                form.setValue("buyer_tax_code", buyerTaxCode);
+                if (customerId) {
+                    form.setValue("customer_id", customerId);
+                }
             }
         }
     }, [initialData]);
@@ -581,6 +612,13 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             setLoading(true)
             setError(null)
             try {
+                // Fetch suppliers sử dụng API
+                const suppliersResult = await getSuppliers()
+                if (suppliersResult && suppliersResult.success) {
+                    const suppliersData = suppliersResult.data || []
+                    setSuppliers(suppliersData)
+                }
+
                 // Fetch customers sử dụng API
                 const customersResult = await getCustomers()
                 if (customersResult && customersResult.success) {
@@ -839,22 +877,37 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             }
 
             // Chuẩn bị dữ liệu để gửi API
+            // Tính toán lại các trường nếu chưa có
+            const quantity = Number(detail.quantity) || 0;
+            const priceBeforeTax = Number(detail.price_before_tax) || 0;
+            const taxRate = detail.tax_rate || "0%";
+
+            // Tính toán total_before_tax
+            const totalBeforeTax = quantity * priceBeforeTax;
+
+            // Tính toán tax_amount
+            const taxPercent = taxRate === "KCT" ? 0 : Number(taxRate.replace("%", "") || 0);
+            const taxAmount = (totalBeforeTax * taxPercent) / 100;
+
+            // Tính toán total_after_tax
+            const totalAfterTax = totalBeforeTax + taxAmount;
+
             const updateData = {
                 category: detail.category || "HH",
                 inventory_id: detail.inventory_id,
-                customer_id: detail.customer_id,
                 item_name: detail.item_name,
                 unit: detail.unit,
-                quantity: Number(detail.quantity),
-                price_before_tax: Number(detail.price_before_tax),
-                tax_rate: detail.tax_rate,
-                buyer_name: detail.buyer_name || defaultBuyerName,
-                buyer_tax_code: detail.buyer_tax_code || defaultBuyerTaxCode,
-                total_before_tax: Number(detail.total_before_tax),
-                tax_amount: Number(detail.tax_amount),
-                total_after_tax: Number(detail.total_after_tax),
+                quantity: quantity,
+                price_before_tax: priceBeforeTax,
+                tax_rate: taxRate,
+                // Sử dụng giá trị đã tính toán hoặc giá trị từ form nếu đã chỉnh sửa thủ công
+                total_before_tax: detail.is_manually_edited ? (Number(detail.total_before_tax) || 0) : totalBeforeTax,
+                tax_amount: detail.is_manually_edited ? (Number(detail.tax_amount) || 0) : taxAmount,
+                total_after_tax: detail.is_manually_edited ? (Number(detail.total_after_tax) || 0) : totalAfterTax,
                 is_manually_edited: detail.is_manually_edited || false,
             };
+
+            console.log("Export update detail data being sent:", updateData);
 
             // Gọi API cập nhật chi tiết
             const result = await updateExportDetail(initialData.id, detailId, updateData);
@@ -1204,94 +1257,15 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         // Không cần làm gì đặc biệt khi người dùng nhập, vì sẽ xử lý khi người dùng chọn hoặc đóng combobox
     }
 
-    // Xử lý khi người dùng nhập hoặc chọn khách hàng
-    const handleCustomerChange = (value: string, index: number) => {
-        // Kiểm tra xem giá trị có phải là ID của khách hàng hiện có không
-        const matchedCustomer = customers.find(customer => customer.id.toString() === value)
-
-        if (matchedCustomer) {
-            // Nếu là khách hàng hiện có, sử dụng thông tin của khách hàng đó
-            form.setValue(`details.${index}.customer_id`, matchedCustomer.id)
-            form.setValue(`details.${index}.buyer_name`, matchedCustomer.name)
-            form.setValue(`details.${index}.buyer_tax_code`, matchedCustomer.tax_code || "")
-        } else {
-            // Nếu là khách hàng mới, sử dụng giá trị nhập vào làm tên khách hàng
-            // Kiểm tra xem có phải là tên khách hàng hiện có không
-            const matchedByName = customers.find(
-                customer => customer.name.toLowerCase() === value.toLowerCase()
-            )
-
-            if (matchedByName) {
-                // Nếu tìm thấy khách hàng theo tên, sử dụng thông tin của khách hàng đó
-                form.setValue(`details.${index}.customer_id`, matchedByName.id)
-                form.setValue(`details.${index}.buyer_name`, matchedByName.name)
-                form.setValue(`details.${index}.buyer_tax_code`, matchedByName.tax_code || "")
-            } else {
-                // Nếu không tìm thấy, sử dụng giá trị nhập vào làm tên khách hàng mới
-                form.setValue(`details.${index}.customer_id`, null)
-                form.setValue(`details.${index}.buyer_name`, value)
-                form.setValue(`details.${index}.buyer_tax_code`, "")
-            }
-        }
-
-        handleDetailFieldChange(index)
-    }
+    // Customer info is now handled at invoice level, not detail level
+    // This function is no longer needed as customer selection is done globally
 
     // Xử lý khi người dùng nhập vào ô tìm kiếm khách hàng
     const handleCustomerInputChange = (_value: string, _index: number) => {
         // Không cần làm gì đặc biệt khi người dùng nhập, vì sẽ xử lý khi người dùng chọn hoặc đóng combobox
     }
 
-    // Xử lý thêm mới khách hàng
-    const handleAddCustomer = async (data: CustomerFormValues) => {
-        try {
-            setLoading(true)
-            const result = await createCustomer(data)
 
-            if (result && result.success) {
-                const newCustomer = result.data
-
-                // Cập nhật danh sách khách hàng
-                const updatedCustomers = [...customers, newCustomer]
-                setCustomers(updatedCustomers)
-
-                // Áp dụng khách hàng vừa tạo vào dòng hiện tại
-                if (currentDetailIndex !== null) {
-                    // Sử dụng setTimeout để đảm bảo việc cập nhật khách hàng được thực hiện sau khi modal đã đóng
-                    setTimeout(() => {
-                        handleCustomerChange(newCustomer.id.toString(), currentDetailIndex)
-                    }, 100)
-                }
-
-                setIsCustomerModalOpen(false)
-                customerForm.reset()
-
-                // Hiển thị thông báo thành công
-                toast.success("Thêm khách hàng thành công", {
-                    description: `Đã thêm khách hàng ${newCustomer.name} vào hệ thống`,
-                    className: "text-lg font-medium",
-                    descriptionClassName: "text-base"
-                })
-            } else {
-                setError("Không thể tạo khách hàng mới")
-                toast.error("Không thể tạo khách hàng mới", {
-                    description: result?.message || "Vui lòng kiểm tra lại thông tin",
-                    className: "text-lg font-medium",
-                    descriptionClassName: "text-base"
-                })
-            }
-        } catch (err) {
-            console.error("Error adding customer:", err)
-            setError("Đã xảy ra lỗi khi tạo khách hàng mới")
-            toast.error("Đã xảy ra lỗi", {
-                description: "Đã xảy ra lỗi khi tạo khách hàng mới",
-                className: "text-lg font-medium",
-                descriptionClassName: "text-base"
-            })
-        } finally {
-            setLoading(false)
-        }
-    }
 
     // Xử lý thêm mới hàng hóa
     const handleAddInventory = async (data: InventoryFormValues) => {
@@ -1453,7 +1427,6 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                 append({
                                     category: "HH" as const, // Export chỉ cho phép HH
                                     inventory_id: detail.inventory_id,
-                                    customer_id: detail.customer_id,
                                     item_name: detail.item_name,
                                     unit: detail.unit,
                                     quantity: detail.quantity,
@@ -1462,11 +1435,10 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                     total_before_tax: detail.total_before_tax,
                                     tax_amount: detail.tax_amount,
                                     total_after_tax: detail.total_after_tax,
-                                    buyer_name: detail.buyer_name,
-                                    buyer_tax_code: detail.buyer_tax_code,
                                     is_manually_edited: false,
                                     isLaborService: detail.isLaborService || false,
                                     ocrTaskId: detail.ocrTaskId
+                                    // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
                                 });
                             });
 
@@ -1630,7 +1602,6 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                         append({
                                             category: "HH" as const, // Export chỉ cho phép HH
                                             inventory_id: detail.inventory_id,
-                                            customer_id: detail.customer_id,
                                             item_name: detail.item_name,
                                             unit: detail.unit,
                                             quantity: detail.quantity,
@@ -1639,10 +1610,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                             total_before_tax: detail.total_before_tax,
                                             tax_amount: detail.tax_amount,
                                             total_after_tax: detail.total_after_tax,
-                                            buyer_name: detail.buyer_name,
-                                            buyer_tax_code: detail.buyer_tax_code,
                                             is_manually_edited: false,
                                             isLaborService: detail.isLaborService || false,
+                                            // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
                                             ocrTaskId: detail.ocrTaskId
                                         });
                                     });
@@ -1763,8 +1733,130 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
 
     // Hàm xử lý kiểm tra và lưu các hàng hóa mới trước khi submit form
     const handleFormSubmit = async (data: ExportFormValues) => {
+        console.log("🚀 handleFormSubmit called with data:", data);
         // Đánh dấu form đã được submit
         setIsSubmitted(true);
+
+        // Nếu có thông tin người bán mặc định nhưng chưa có trong database, thêm mới
+        const sellerName = form.getValues("seller_name");
+        const sellerTaxCode = form.getValues("seller_tax_code");
+        const sellerAddress = form.getValues("seller_address");
+
+        if (sellerName && !form.getValues("supplier_id")) {
+            try {
+                setLoading(true);
+                const result = await createSupplier({
+                    name: sellerName,
+                    tax_code: sellerTaxCode || "",
+                    address: sellerAddress || "",
+                    phone: "",
+                    email: ""
+                });
+
+                if (result && result.success) {
+                    const newSupplier = result.data;
+
+                    // Cập nhật danh sách nhà cung cấp
+                    const updatedSuppliers = [...suppliers, newSupplier];
+                    setSuppliers(updatedSuppliers);
+
+                    // Set supplier info at invoice level
+                    form.setValue("supplier_id", newSupplier.id);
+                    form.setValue("seller_name", newSupplier.name);
+                    form.setValue("seller_tax_code", newSupplier.tax_code || "");
+                    form.setValue("seller_address", newSupplier.address || "");
+
+                    toast.success("Đã thêm người bán mới", {
+                        description: `Đã thêm người bán "${newSupplier.name}" vào hệ thống`,
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
+                    });
+                } else if (result && !result.success && result.data) {
+                    // Trường hợp supplier đã tồn tại, sử dụng supplier hiện có
+                    const existingSupplier = result.data;
+
+                    // Set supplier info at invoice level
+                    form.setValue("supplier_id", existingSupplier.id);
+                    form.setValue("seller_name", existingSupplier.name);
+                    form.setValue("seller_tax_code", existingSupplier.tax_code || "");
+                    form.setValue("seller_address", existingSupplier.address || "");
+
+                    toast.info("Sử dụng người bán đã có", {
+                        description: `Người bán "${existingSupplier.name}" đã tồn tại trong hệ thống`,
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
+                    });
+                }
+            } catch (err) {
+                console.error("Error adding new supplier:", err);
+                toast.error("Lỗi khi thêm người bán mới", {
+                    description: "Vẫn tiếp tục lưu hóa đơn",
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
+                });
+            } finally {
+                setLoading(false);
+            }
+        }
+
+        // Nếu có thông tin người mua mặc định nhưng chưa có trong database, thêm mới
+        const buyerName = form.getValues("buyer_name");
+        const buyerTaxCode = form.getValues("buyer_tax_code");
+
+        if (buyerName && !form.getValues("customer_id")) {
+            try {
+                setLoading(true);
+                const result = await createCustomer({
+                    name: buyerName,
+                    tax_code: buyerTaxCode || "",
+                    address: "",
+                    phone: "",
+                    email: ""
+                });
+
+                if (result && result.success) {
+                    const newCustomer = result.data;
+
+                    // Cập nhật danh sách khách hàng
+                    const updatedCustomers = [...customers, newCustomer];
+                    setCustomers(updatedCustomers);
+
+                    // Set customer info at invoice level
+                    form.setValue("customer_id", newCustomer.id);
+                    form.setValue("buyer_name", newCustomer.name);
+                    form.setValue("buyer_tax_code", newCustomer.tax_code || "");
+
+                    toast.success("Đã thêm người mua mới", {
+                        description: `Đã thêm người mua "${newCustomer.name}" vào hệ thống`,
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
+                    });
+                } else if (result && !result.success && result.data) {
+                    // Trường hợp customer đã tồn tại, sử dụng customer hiện có
+                    const existingCustomer = result.data;
+
+                    // Set customer info at invoice level
+                    form.setValue("customer_id", existingCustomer.id);
+                    form.setValue("buyer_name", existingCustomer.name);
+                    form.setValue("buyer_tax_code", existingCustomer.tax_code || "");
+
+                    toast.info("Sử dụng người mua đã có", {
+                        description: `Người mua "${existingCustomer.name}" đã tồn tại trong hệ thống`,
+                        className: "text-lg font-medium",
+                        descriptionClassName: "text-base"
+                    });
+                }
+            } catch (err) {
+                console.error("Error adding new customer:", err);
+                toast.error("Lỗi khi thêm người mua mới", {
+                    description: "Vẫn tiếp tục lưu hóa đơn",
+                    className: "text-lg font-medium",
+                    descriptionClassName: "text-base"
+                });
+            } finally {
+                setLoading(false);
+            }
+        }
 
         // Kiểm tra lỗi tên hàng hóa
         const hasItemNameError = Object.keys(itemNameError).length > 0;
@@ -1861,33 +1953,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             }
         }
 
-        // Đảm bảo trường note được gửi đúng cách
-        // Tạo một bản sao của dữ liệu và đặt trường note rõ ràng
-        const formData = {
-            ...data,
-            note: data.note === undefined || data.note === null ? "" : data.note,
-            // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
-            total_before_tax: data.is_invoice_totals_manually_edited ? Number(data.total_before_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_before_tax) || 0), 0)),
-            total_tax: data.is_invoice_totals_manually_edited ? Number(data.total_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.tax_amount) || 0), 0)),
-            total_after_tax: data.is_invoice_totals_manually_edited ? Number(data.total_after_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_after_tax) || 0), 0)),
-            is_invoice_totals_manually_edited: data.is_invoice_totals_manually_edited || false,
-            // Đảm bảo các chi tiết có tên hàng hóa được gửi đúng
-            details: data.details.map(detail => ({
-                ...detail,
-                // Đảm bảo item_name là chuỗi
-                item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
-                // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
-                total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
-                tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
-                total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
-                is_manually_edited: detail.is_manually_edited || false
-            }))
-        };
 
-        // Debug dữ liệu form
-        console.log("Original form data:", data);
-        console.log("Modified form data being submitted:", formData);
-        console.log("Note field in form data:", formData.note);
 
         // Kiểm tra xem có đang ở chế độ chỉnh sửa không
         if (mode === "edit" && initialData?.id) {
@@ -1910,7 +1976,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 }
 
                 // 2. Cập nhật các chi tiết đã thay đổi
-                const details = formData.details;
+                const details = data.details;
                 for (const detail of details) {
                     if (detail.id) {
                         console.log(`Updating detail with ID ${detail.id}`);
@@ -1923,13 +1989,17 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                             item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
                             // Giữ lại inventory_id để cập nhật đúng bản ghi trong cơ sở dữ liệu
                             inventory_id: detail.inventory_id,
-                            // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì để backend tính toán
-                            total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
-                            tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
-                            total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
+                            // Luôn gửi giá trị tính toán từ frontend
+                            total_before_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+                            tax_amount: Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                              (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+                            total_after_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+                              Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                              (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
                             is_manually_edited: detail.is_manually_edited || false
                         };
 
+                        console.log("Export detail data being sent in form submit:", detailData);
                         await updateExportDetail(initialData.id, detail.id, detailData);
                     }
                 }
@@ -1977,10 +2047,13 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                 ...detail,
                                 quantity: Number(detail.quantity),
                                 price_before_tax: Number(detail.price_before_tax),
-                                // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công, nếu không thì để backend tính toán
-                                total_before_tax: detail.is_manually_edited ? Number(detail.total_before_tax) : undefined,
-                                tax_amount: detail.is_manually_edited ? Number(detail.tax_amount) : undefined,
-                                total_after_tax: detail.is_manually_edited ? Number(detail.total_after_tax) : undefined,
+                                // Luôn gửi giá trị tính toán từ frontend
+                                total_before_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+                                tax_amount: Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+                                total_after_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+                                  Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
                                 is_manually_edited: detail.is_manually_edited || false
                             };
 
@@ -2032,13 +2105,51 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         }
 
         // Nếu không phải chế độ chỉnh sửa, gọi hàm onSubmit bình thường
-        // Sử dụng formData đã được xử lý để đảm bảo trường note được gửi đúng cách
+        // Tạo formData sau khi đã tạo supplier và customer để đảm bảo có supplier_id và customer_id
+        const formData = {
+            ...data,
+            note: data.note === undefined || data.note === null ? "" : data.note,
+            // Lấy supplier_id và customer_id từ form sau khi đã được set
+            supplier_id: form.getValues("supplier_id"),
+            customer_id: form.getValues("customer_id"),
+            seller_name: form.getValues("seller_name"),
+            seller_tax_code: form.getValues("seller_tax_code"),
+            buyer_name: form.getValues("buyer_name"),
+            buyer_tax_code: form.getValues("buyer_tax_code"),
+            // Sử dụng giá trị từ form nếu đã được chỉnh sửa thủ công
+            total_before_tax: data.is_invoice_totals_manually_edited ? Number(data.total_before_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_before_tax) || 0), 0)),
+            total_tax: data.is_invoice_totals_manually_edited ? Number(data.total_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.tax_amount) || 0), 0)),
+            total_after_tax: data.is_invoice_totals_manually_edited ? Number(data.total_after_tax) : Number(data.details.reduce((sum: number, detail: any) => sum + (Number(detail.total_after_tax) || 0), 0)),
+            is_invoice_totals_manually_edited: data.is_invoice_totals_manually_edited || false,
+            // Đảm bảo các chi tiết có tên hàng hóa được gửi đúng
+            details: data.details.map(detail => ({
+                ...detail,
+                // Đảm bảo item_name là chuỗi
+                item_name: typeof detail.item_name === 'string' ? detail.item_name : String(detail.item_name || ''),
+                // Luôn gửi giá trị tính toán từ frontend
+                total_before_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)),
+                tax_amount: Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+                total_after_tax: Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) +
+                  Math.round((Math.round(Number(detail.quantity) * Number(detail.price_before_tax)) *
+                  (detail.tax_rate === "KCT" ? 0 : Number(detail.tax_rate?.replace("%", "") || 0))) / 100),
+                is_manually_edited: detail.is_manually_edited || false
+            }))
+        };
+
+        // Debug dữ liệu form
+        console.log("Final data for submit:", formData);
+        console.log("Supplier and Customer IDs:", {
+            supplier_id: formData.supplier_id,
+            customer_id: formData.customer_id,
+        });
+
         onSubmit(formData);
     };
 
     // Hàm xử lý khi submit form không hợp lệ
     const handleInvalidSubmit = (errors: any) => {
-        console.log("Form validation errors:", errors);
+        console.log("❌ Form validation errors:", errors);
         // Đánh dấu form đã được submit để hiển thị lỗi
         setIsSubmitted(true);
 
@@ -2102,12 +2213,145 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
 
             </div>
 
-            {/* Hàng 2: Thông tin người mua và Tổng tiền */}
+            {/* Hàng 2: Thông tin người bán và người mua */}
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 max-w-full">
+                {/* Thông tin người bán */}
+                <div className="max-w-full">
+                    <Label className="text-sm md:text-base mb-1 md:mb-2 block">Thông tin người bán</Label>
+                    <div className="p-3 border rounded-md bg-blue-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
+                        <div className="flex flex-col space-y-2">
+                            <div className="flex flex-col">
+                                <Label htmlFor="default_seller_name" className="text-xs font-medium mb-1">Tên người bán:</Label>
+                                <div className="relative">
+                                    <Input
+                                        ref={sellerInputRef}
+                                        id="default_seller_name"
+                                        type="text"
+                                        placeholder="Nhập tên người bán"
+                                        value={defaultSellerName}
+                                        onChange={(e) => {
+                                            const value = e.target.value;
+                                            setDefaultSellerName(value);
+
+                                            // Set seller_name vào form để có thể submit
+                                            form.setValue("seller_name", value);
+
+                                            // Clear supplier_id khi user thay đổi seller name manually
+                                            // để tránh conflict giữa supplier_id cũ và seller_name mới
+                                            if (form.getValues("supplier_id")) {
+                                                form.setValue("supplier_id", null);
+                                                setDefaultSupplierId(null);
+                                            }
+
+                                            // Tìm kiếm người bán phù hợp
+                                            if (value.length > 0) {
+                                                const filteredSuppliers = suppliers.filter(supplier =>
+                                                    supplier.name.toLowerCase().includes(value.toLowerCase()) ||
+                                                    (supplier.tax_code && supplier.tax_code.toLowerCase().includes(value.toLowerCase()))
+                                                );
+                                                setFilteredSuppliers(filteredSuppliers);
+                                                setShowSellerDropdown(filteredSuppliers.length > 0);
+                                            } else {
+                                                setShowSellerDropdown(false);
+                                            }
+                                        }}
+                                        onFocus={() => {
+                                            // Hiển thị dropdown khi focus nếu có kết quả
+                                            if (defaultSellerName.length > 0 && filteredSuppliers.length > 0) {
+                                                setShowSellerDropdown(true);
+                                            }
+                                        }}
+                                        onBlur={() => {
+                                            // Ẩn dropdown sau một khoảng thời gian ngắn để cho phép click vào dropdown
+                                            setTimeout(() => {
+                                                setShowSellerDropdown(false);
+                                            }, 150);
+                                        }}
+                                        className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                        disabled={isViewMode}
+                                    />
+
+                                    {/* Dropdown hiển thị danh sách người bán */}
+                                    {showSellerDropdown && filteredSuppliers.length > 0 && (
+                                        <DropdownPortal
+                                            targetRef={sellerInputRef}
+                                            isOpen={showSellerDropdown}
+                                            onClose={() => setShowSellerDropdown(false)}
+                                        >
+                                            {filteredSuppliers.slice(0, 5).map((supplier) => (
+                                                <div
+                                                    key={supplier.id}
+                                                    className="px-3 py-2 hover:bg-blue-100 cursor-pointer border-b border-gray-100 last:border-b-0"
+                                                    onMouseDown={(e) => {
+                                                        // Ngăn sự kiện mousedown lan truyền
+                                                        e.preventDefault();
+                                                        e.stopPropagation();
+
+                                                        // Cập nhật thông tin người bán mặc định
+                                                        setDefaultSellerName(supplier.name);
+                                                        setDefaultSellerTaxCode(supplier.tax_code || "");
+                                                        setDefaultSupplierId(supplier.id);
+
+                                                        // Set supplier info at invoice level
+                                                        form.setValue("supplier_id", supplier.id);
+                                                        form.setValue("seller_name", supplier.name);
+                                                        form.setValue("seller_tax_code", supplier.tax_code || "");
+                                                        form.setValue("seller_address", supplier.address || "");
+
+                                                        // Ẩn dropdown
+                                                        setShowSellerDropdown(false);
+                                                    }}
+                                                >
+                                                    <div className="text-sm font-medium">{supplier.name}</div>
+                                                    {supplier.tax_code && (
+                                                        <div className="text-xs text-gray-500">MST: {supplier.tax_code}</div>
+                                                    )}
+                                                </div>
+                                            ))}
+                                        </DropdownPortal>
+                                    )}
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col">
+                                <Label htmlFor="default_seller_tax_code" className="text-xs font-medium mb-1">Mã số thuế:</Label>
+                                <Input
+                                    id="default_seller_tax_code"
+                                    type="text"
+                                    placeholder="Nhập mã số thuế"
+                                    value={defaultSellerTaxCode}
+                                    onChange={(e) => {
+                                        const value = e.target.value;
+                                        setDefaultSellerTaxCode(value);
+                                        // Set seller_tax_code vào form để có thể submit
+                                        form.setValue("seller_tax_code", value);
+
+                                        // Clear supplier_id khi user thay đổi seller tax code manually
+                                        if (form.getValues("supplier_id")) {
+                                            form.setValue("supplier_id", null);
+                                            setDefaultSupplierId(null);
+                                        }
+                                    }}
+                                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                    disabled={isViewMode}
+                                />
+                            </div>
+                        </div>
+
+                        <div className="flex-1 flex items-end">
+
+                        </div>
+
+                        <div className="text-xs text-gray-500 mt-1">
+                            Thông tin người bán sẽ áp dụng cho hóa đơn này.
+                        </div>
+                    </div>
+                </div>
+
                 {/* Thông tin người mua */}
                 <div className="max-w-full">
                     <Label className="text-sm md:text-base mb-1 md:mb-2 block">Thông tin người mua</Label>
-                    <div className="p-3 border rounded-md bg-blue-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
+                    <div className="p-3 border rounded-md bg-green-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
                         <div className="flex flex-col space-y-2">
                             <div className="flex flex-col">
                                 <Label htmlFor="default_buyer_name" className="text-xs font-medium mb-1">Tên người mua:</Label>
@@ -2122,11 +2366,14 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                             const value = e.target.value;
                                             setDefaultBuyerName(value);
 
-                                            // Tự động áp dụng tên người mua cho tất cả dòng
-                                            const details = form.getValues("details");
-                                            details.forEach((_, index) => {
-                                                form.setValue(`details.${index}.buyer_name`, value);
-                                            });
+                                            // Set buyer name at invoice level instead of detail level
+                                            form.setValue("buyer_name", value);
+
+                                            // Clear customer_id khi user thay đổi buyer name manually
+                                            if (form.getValues("customer_id")) {
+                                                form.setValue("customer_id", null);
+                                                setDefaultCustomerId(null);
+                                            }
 
                                             // Tìm kiếm người mua phù hợp
                                             if (value.length > 0) {
@@ -2177,13 +2424,10 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                         setDefaultBuyerTaxCode(customer.tax_code || "");
                                                         setDefaultCustomerId(customer.id);
 
-                                                        // Áp dụng cho tất cả dòng hàng hóa
-                                                        const details = form.getValues("details");
-                                                        details.forEach((_, index) => {
-                                                            form.setValue(`details.${index}.customer_id`, customer.id);
-                                                            form.setValue(`details.${index}.buyer_name`, customer.name);
-                                                            form.setValue(`details.${index}.buyer_tax_code`, customer.tax_code || "");
-                                                        });
+                                                        // Set customer info at invoice level instead of detail level
+                                                        form.setValue("customer_id", customer.id);
+                                                        form.setValue("buyer_name", customer.name);
+                                                        form.setValue("buyer_tax_code", customer.tax_code || "");
 
                                                         // Ẩn dropdown sau khi chọn
                                                         setShowBuyerDropdown(false);
@@ -2214,199 +2458,211 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                     className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
                                     value={defaultBuyerTaxCode}
                                     onChange={(e) => {
-                                        setDefaultBuyerTaxCode(e.target.value);
-                                        // Áp dụng cho tất cả dòng hàng hóa
-                                        const details = form.getValues("details");
-                                        details.forEach((_, index) => {
-                                            form.setValue(`details.${index}.buyer_tax_code`, e.target.value);
-                                        });
+                                        const value = e.target.value;
+                                        setDefaultBuyerTaxCode(value);
+                                        // Set buyer_tax_code vào form ở invoice level
+                                        form.setValue("buyer_tax_code", value);
+
+                                        // Clear customer_id khi user thay đổi buyer tax code manually
+                                        if (form.getValues("customer_id")) {
+                                            form.setValue("customer_id", null);
+                                            setDefaultCustomerId(null);
+                                        }
                                     }}
                                     disabled={isViewMode}
                                 />
                             </div>
                         </div>
 
+                        <div className="flex-1 flex items-end">
+
+                        </div>
+
                         {/* Thông báo về việc tự động áp dụng */}
-                        <div className="text-xs text-blue-600 italic mt-1">
+                        <div className="text-xs text-gray-500 mt-1">
                             Thông tin người mua sẽ tự động áp dụng cho tất cả hàng hóa.
                         </div>
                     </div>
                 </div>
+            </div>
 
-                {/* Tổng tiền */}
-                <div className="max-w-full">
-                    <Label className="text-sm md:text-base mb-1 md:mb-2 block">Tổng tiền</Label>
-                    <div className="p-3 border rounded-md bg-blue-50 space-y-2 max-w-full min-h-[180px] flex flex-col">
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            {/* Tổng tiền trước thuế */}
-                            <div className="flex-1">
-                                <Label htmlFor="total_before_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền trước thuế:</Label>
-                                {isViewMode ? (
-                                    <span className="text-sm font-bold">
-                                        {formatCurrency(
-                                            // Sử dụng trực tiếp giá trị total_before_tax từ API nếu có
-                                            initialData && initialData.total_before_tax
-                                                ? initialData.total_before_tax
-                                                : form.getValues("details")?.reduce(
-                                                    (sum, detail) => sum + (Number(detail.total_before_tax || 0)),
-                                                    0
-                                                  ) || 0
-                                        )}
-                                    </span>
-                                ) : (
-                                    <Input
-                                        id="total_before_tax"
-                                        type="text"
-                                        inputMode="decimal"
-                                        className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
-                                        value={totalBeforeTaxDisplay}
-                                        placeholder=""
-                                        onChange={(e) => {
-                                            // Sử dụng formatInputWhileTypingInteger cho số nguyên
-                                            const rawValue = e.target.value;
-                                            const formattedValue = formatInputWhileTypingInteger(rawValue);
 
-                                            // Cập nhật display value với formatting
-                                            e.target.value = formattedValue;
-                                            setTotalBeforeTaxDisplay(formattedValue);
+            {/* Hàng 2.5: Tổng tiền */}
+            <div className="max-w-full">
+                <Label className="text-sm md:text-base mb-1 md:mb-2 block">Tổng tiền</Label>
+                <div className="p-3 border rounded-md bg-yellow-50 space-y-2 max-w-full">
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        {/* Tổng tiền trước thuế */}
+                        <div className="flex-1">
+                            <Label htmlFor="total_before_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền trước thuế:</Label>
+                            {isViewMode ? (
+                                <span className="text-sm font-bold">
+                                    {formatCurrency(
+                                        // Sử dụng trực tiếp giá trị total_before_tax từ API nếu có
+                                        initialData && initialData.total_before_tax
+                                            ? initialData.total_before_tax
+                                            : form.getValues("details")?.reduce(
+                                                (sum, detail) => sum + (Number(detail.total_before_tax || 0)),
+                                                0
+                                              ) || 0
+                                    )}
+                                </span>
+                            ) : (
+                                <Input
+                                    id="total_before_tax"
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                    value={totalBeforeTaxDisplay}
+                                    placeholder=""
+                                    onChange={(e) => {
+                                        // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                                        const rawValue = e.target.value;
+                                        const formattedValue = formatInputWhileTypingInteger(rawValue);
 
-                                            // Parse và lưu giá trị số nguyên vào form
-                                            const numValue = parseIntegerNumber(formattedValue);
+                                        // Cập nhật display value với formatting
+                                        e.target.value = formattedValue;
+                                        setTotalBeforeTaxDisplay(formattedValue);
+
+                                        // Parse và lưu giá trị số nguyên vào form
+                                        const numValue = parseIntegerNumber(formattedValue);
+                                        form.setValue("total_before_tax", numValue);
+
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                    onBlur={(e) => {
+                                        const value = e.target.value;
+                                        if (value === "" || value === ".") {
+                                            setTotalBeforeTaxDisplay("");
+                                            form.setValue("total_before_tax", 0);
+                                        } else {
+                                            const numValue = parseIntegerNumber(value);
+                                            setTotalBeforeTaxDisplay(formatCurrencyInputVN(numValue));
                                             form.setValue("total_before_tax", numValue);
-
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                        onBlur={(e) => {
-                                            const value = e.target.value;
-                                            if (value === "" || value === ".") {
-                                                setTotalBeforeTaxDisplay("");
-                                                form.setValue("total_before_tax", 0);
-                                            } else {
-                                                const numValue = parseIntegerNumber(value);
-                                                setTotalBeforeTaxDisplay(formatCurrencyInputVN(numValue));
-                                                form.setValue("total_before_tax", numValue);
-                                            }
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                    />
-                                )}
-                            </div>
-                            {/* Tổng tiền thuế */}
-                            <div className="flex-1">
-                                <Label htmlFor="total_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền thuế:</Label>
-                                {isViewMode ? (
-                                    <span className="text-sm font-bold">
-                                        {formatCurrency(
-                                            // Sử dụng trực tiếp giá trị tax_amount từ API nếu có
-                                            initialData && initialData.tax_amount
-                                                ? initialData.tax_amount
-                                                : form.getValues("details")?.reduce(
-                                                    (sum, detail) => sum + (Number(detail.tax_amount || 0)),
-                                                    0
-                                                  ) || 0
-                                        )}
-                                    </span>
-                                ) : (
-                                    <Input
-                                        id="total_tax"
-                                        type="text"
-                                        inputMode="decimal"
-                                        className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
-                                        value={totalTaxDisplay}
-                                        placeholder=""
-                                        onChange={(e) => {
-                                            // Sử dụng formatInputWhileTypingInteger cho số nguyên
-                                            const rawValue = e.target.value;
-                                            const formattedValue = formatInputWhileTypingInteger(rawValue);
-
-                                            // Cập nhật display value với formatting
-                                            e.target.value = formattedValue;
-                                            setTotalTaxDisplay(formattedValue);
-
-                                            // Parse và lưu giá trị số nguyên vào form
-                                            const numValue = parseIntegerNumber(formattedValue);
-                                            form.setValue("total_tax", numValue);
-
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                        onBlur={(e) => {
-                                            const value = e.target.value;
-                                            if (value === "" || value === ".") {
-                                                setTotalTaxDisplay("");
-                                                form.setValue("total_tax", 0);
-                                            } else {
-                                                const numValue = parseIntegerNumber(value);
-                                                setTotalTaxDisplay(formatCurrencyInputVN(numValue));
-                                                form.setValue("total_tax", numValue);
-                                            }
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                    />
-                                )}
-                            </div>
+                                        }
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                />
+                            )}
                         </div>
-                        {/* Tổng thanh toán - full width với border-t */}
-                        <div className="pt-2">
-                            <div className="flex-1">
-                                <Label htmlFor="total_payment" className="text-sm font-bold text-gray-700 mb-1 block">Tổng thanh toán:</Label>
-                                {isViewMode ? (
-                                    <span className="text-sm font-bold">
-                                        {formatCurrency(
-                                            // Sử dụng trực tiếp giá trị total_after_tax từ API nếu có
-                                            initialData && initialData.total_after_tax
-                                                ? initialData.total_after_tax
-                                                : form.getValues("details")?.reduce(
-                                                    (sum, detail) => sum + (Number(detail.total_after_tax || 0)),
-                                                    0
-                                                  ) || 0
-                                        )}
-                                    </span>
-                                ) : (
-                                    <Input
-                                        id="total_payment"
-                                        type="text"
-                                        inputMode="decimal"
-                                        className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300 font-bold"
-                                        value={totalAfterTaxDisplay}
-                                        placeholder=""
-                                        onChange={(e) => {
-                                            // Sử dụng formatInputWhileTypingInteger cho số nguyên
-                                            const rawValue = e.target.value;
-                                            const formattedValue = formatInputWhileTypingInteger(rawValue);
 
-                                            // Cập nhật display value với formatting
-                                            e.target.value = formattedValue;
-                                            setTotalAfterTaxDisplay(formattedValue);
+                        {/* Tổng tiền thuế */}
+                        <div className="flex-1">
+                            <Label htmlFor="total_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền thuế:</Label>
+                            {isViewMode ? (
+                                <span className="text-sm font-bold">
+                                    {formatCurrency(
+                                        // Sử dụng trực tiếp giá trị tax_amount từ API nếu có
+                                        initialData && initialData.tax_amount
+                                            ? initialData.tax_amount
+                                            : form.getValues("details")?.reduce(
+                                                (sum, detail) => sum + (Number(detail.tax_amount || 0)),
+                                                0
+                                              ) || 0
+                                    )}
+                                </span>
+                            ) : (
+                                <Input
+                                    id="total_tax"
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                    value={totalTaxDisplay}
+                                    placeholder=""
+                                    onChange={(e) => {
+                                        // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                                        const rawValue = e.target.value;
+                                        const formattedValue = formatInputWhileTypingInteger(rawValue);
 
-                                            // Parse và lưu giá trị số nguyên vào form
-                                            const numValue = parseIntegerNumber(formattedValue);
+                                        // Cập nhật display value với formatting
+                                        e.target.value = formattedValue;
+                                        setTotalTaxDisplay(formattedValue);
+
+                                        // Parse và lưu giá trị số nguyên vào form
+                                        const numValue = parseIntegerNumber(formattedValue);
+                                        form.setValue("total_tax", numValue);
+
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                    onBlur={(e) => {
+                                        const value = e.target.value;
+                                        if (value === "" || value === ".") {
+                                            setTotalTaxDisplay("");
+                                            form.setValue("total_tax", 0);
+                                        } else {
+                                            const numValue = parseIntegerNumber(value);
+                                            setTotalTaxDisplay(formatCurrencyInputVN(numValue));
+                                            form.setValue("total_tax", numValue);
+                                        }
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                />
+                            )}
+                        </div>
+
+                        {/* Tổng thanh toán */}
+                        <div className="flex-1">
+                            <Label htmlFor="total_payment" className="text-sm font-bold text-gray-700 mb-1 block">Tổng thanh toán:</Label>
+                            {isViewMode ? (
+                                <span className="text-sm font-bold">
+                                    {formatCurrency(
+                                        // Sử dụng trực tiếp giá trị total_after_tax từ API nếu có
+                                        initialData && initialData.total_after_tax
+                                            ? initialData.total_after_tax
+                                            : form.getValues("details")?.reduce(
+                                                (sum, detail) => sum + (Number(detail.total_after_tax || 0)),
+                                                0
+                                              ) || 0
+                                    )}
+                                </span>
+                            ) : (
+                                <Input
+                                    id="total_after_tax"
+                                    type="text"
+                                    inputMode="decimal"
+                                    className="h-8 text-sm rounded-none border-0 border-b shadow-none focus-visible:ring-0 focus-visible:border-blue-300"
+                                    value={totalAfterTaxDisplay}
+                                    placeholder=""
+                                    onChange={(e) => {
+                                        // Sử dụng formatInputWhileTypingInteger cho số nguyên
+                                        const rawValue = e.target.value;
+                                        const formattedValue = formatInputWhileTypingInteger(rawValue);
+
+                                        // Cập nhật display value với formatting
+                                        e.target.value = formattedValue;
+                                        setTotalAfterTaxDisplay(formattedValue);
+
+                                        // Parse và lưu giá trị số nguyên vào form
+                                        const numValue = parseIntegerNumber(formattedValue);
+                                        form.setValue("total_after_tax", numValue);
+
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                    onBlur={(e) => {
+                                        const value = e.target.value;
+                                        if (value === "" || value === ".") {
+                                            setTotalAfterTaxDisplay("");
+                                            form.setValue("total_after_tax", 0);
+                                        } else {
+                                            const numValue = parseIntegerNumber(value);
+                                            setTotalAfterTaxDisplay(formatCurrencyInputVN(numValue));
                                             form.setValue("total_after_tax", numValue);
-
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                        onBlur={(e) => {
-                                            const value = e.target.value;
-                                            if (value === "" || value === ".") {
-                                                setTotalAfterTaxDisplay("");
-                                                form.setValue("total_after_tax", 0);
-                                            } else {
-                                                const numValue = parseIntegerNumber(value);
-                                                setTotalAfterTaxDisplay(formatCurrencyInputVN(numValue));
-                                                form.setValue("total_after_tax", numValue);
-                                            }
-                                            // Đánh dấu là đã chỉnh sửa thủ công
-                                            form.setValue("is_invoice_totals_manually_edited", true);
-                                        }}
-                                    />
-                                )}
-                            </div>
+                                        }
+                                        // Đánh dấu là đã chỉnh sửa thủ công
+                                        form.setValue("is_invoice_totals_manually_edited", true);
+                                    }}
+                                />
+                            )}
                         </div>
                     </div>
+
+                    {/* Nút tính toán thủ công */}
+
                 </div>
             </div>
 
@@ -2427,9 +2683,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                         quantity: 0,
                                         price_before_tax: 0,
                                         tax_rate: "10%",
-                                        customer_id: defaultCustomerId,
-                                        buyer_name: defaultBuyerName,
-                                        buyer_tax_code: defaultBuyerTaxCode,
+                                        // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
                                         is_manually_edited: false,
                                         isLaborService: false,
                                         inventory_id: null,
@@ -3089,13 +3343,11 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                                     quantity: 0,
                                                                                     price_before_tax: 0,
                                                                                     tax_rate: "10%",
-                                                                                    customer_id: null,
-                                                                                    buyer_name: defaultBuyerName,
-                                                                                    buyer_tax_code: defaultBuyerTaxCode,
+                                                                                    // Removed customer_id, buyer_name, buyer_tax_code - now at invoice level
                                                                                     inventory_id: null,
-                                                                                    total_before_tax: undefined,
-                                                                                    tax_amount: undefined,
-                                                                                    total_after_tax: undefined,
+                                                                                    total_before_tax: 0,
+                                                                                    tax_amount: 0,
+                                                                                    total_after_tax: 0,
                                                                                     is_manually_edited: false,
                                                                                     isLaborService: false,
                                                                                 });
@@ -3247,87 +3499,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 )}
             </div>
 
-            {/* Modal thêm mới khách hàng */}
-            <Dialog open={isCustomerModalOpen} onOpenChange={setIsCustomerModalOpen}>
-                <DialogContent className="max-w-[90vw] sm:max-w-[500px] p-3 md:p-6">
-                    <DialogHeader>
-                        <DialogTitle className="text-lg md:text-xl">Thêm khách hàng mới</DialogTitle>
-                    </DialogHeader>
-                    <form onSubmit={(e) => {
-                        e.preventDefault(); // Ngăn chặn sự kiện submit mặc định
-                        e.stopPropagation(); // Ngăn chặn sự kiện lan truyền lên form cha
-                        customerForm.handleSubmit(handleAddCustomer)(e);
-                    }} className="space-y-4 md:space-y-8">
-                        <div className="space-y-4 md:space-y-6">
-                            <div>
-                                <Label htmlFor="name" className="text-sm md:text-base mb-2 md:mb-3 block">Tên khách hàng *</Label>
-                                <Input
-                                    id="name"
-                                    {...customerForm.register("name")}
-                                    className="h-10 md:h-12 text-sm md:text-base"
-                                />
-                                {customerForm.formState.isSubmitted && customerForm.formState.errors.name && (
-                                    <p className="text-red-500 text-xs md:text-sm mt-1">{customerForm.formState.errors.name.message}</p>
-                                )}
-                            </div>
-                            <div>
-                                <Label htmlFor="tax_code" className="text-sm md:text-base mb-2 md:mb-3 block">Mã số thuế</Label>
-                                <Input
-                                    id="tax_code"
-                                    {...customerForm.register("tax_code")}
-                                    className="h-10 md:h-12 text-sm md:text-base"
-                                />
-                            </div>
-                            <div>
-                                <Label htmlFor="address" className="text-sm md:text-base mb-2 md:mb-3 block">Địa chỉ</Label>
-                                <Input
-                                    id="address"
-                                    {...customerForm.register("address")}
-                                    className="h-10 md:h-12 text-sm md:text-base"
-                                />
-                            </div>
-                            <div>
-                                <Label htmlFor="phone" className="text-sm md:text-base mb-2 md:mb-3 block">Số điện thoại</Label>
-                                <Input
-                                    id="phone"
-                                    {...customerForm.register("phone")}
-                                    className="h-10 md:h-12 text-sm md:text-base"
-                                />
-                            </div>
-                            <div>
-                                <Label htmlFor="email" className="text-sm md:text-base mb-2 md:mb-3 block">Email</Label>
-                                <Input
-                                    id="email"
-                                    type="email"
-                                    {...customerForm.register("email")}
-                                    className="h-10 md:h-12 text-sm md:text-base"
-                                />
-                                {customerForm.formState.isSubmitted && customerForm.formState.errors.email && (
-                                    <p className="text-red-500 text-xs md:text-sm mt-1">{customerForm.formState.errors.email.message}</p>
-                                )}
-                            </div>
-                        </div>
-                        <DialogFooter className="flex-col sm:flex-row gap-3 sm:gap-2 md:gap-4">
-                            <Button
-                                type="button"
-                                variant="outline"
-                                className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
-                                onClick={() => setIsCustomerModalOpen(false)}
-                            >
-                                Hủy
-                            </Button>
-                            <Button
-                                type="button"
-                                className="h-10 md:h-12 px-4 md:px-8 text-sm md:text-base w-full sm:w-auto"
-                                disabled={loading}
-                                onClick={() => customerForm.handleSubmit(handleAddCustomer)()}
-                            >
-                                {loading ? "Đang xử lý..." : "Thêm khách hàng"}
-                            </Button>
-                        </DialogFooter>
-                    </form>
-                </DialogContent>
-            </Dialog>
+
+
+
 
             {/* Modal thêm mới hàng hóa */}
             <Dialog open={isInventoryModalOpen} onOpenChange={setIsInventoryModalOpen}>

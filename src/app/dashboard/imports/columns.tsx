@@ -116,7 +116,7 @@ export const getColumns = ({ onView, onEdit, onDelete, onDeleteMany }: ActionsPr
     },
   },
   {
-    accessorKey: "seller_name",
+    accessorKey: "supplier",
     header: ({ column }) => {
       return (
         <div className="text-center">
@@ -133,7 +133,7 @@ export const getColumns = ({ onView, onEdit, onDelete, onDeleteMany }: ActionsPr
     },
     cell: ({ row }) => {
       const item = row.original
-      return <div>{item.details && item.details.length > 0 ? item.details[0].seller_name : ''}</div>
+      return <div>{item.supplier?.name || 'Chưa có thông tin'}</div>
     },
     meta: {
       columnName: "Người bán"
