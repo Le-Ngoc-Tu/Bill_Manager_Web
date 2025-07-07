@@ -126,7 +126,7 @@ export const syncInvoicesFromN8n = async (
     }
 
     // Check if response is empty - this is valid when no invoices to process
-    if (!responseText || responseText.trim() === '') {
+    if (!responseText || responseText.trim() === '' || responseText.trim() === '{}') {
       console.log('Empty response from n8n - no invoices to process');
       // Return a default response structure for empty results
       return {

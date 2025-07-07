@@ -9,7 +9,7 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
 import FinancialSummaryCards from "@/components/ui/FinancialSummaryCards"
-import { FaPlus, FaFilter, FaSync, FaCheckCircle, FaExclamationTriangle, FaTimesCircle } from "react-icons/fa"
+import { FaPlus, FaFilter, FaSync } from "react-icons/fa"
 import { ImportForm } from "@/components/forms/ImportForm"
 import { DataTable } from "@/components/ui/data-table"
 import { getColumns } from "./columns"
@@ -24,9 +24,6 @@ import { getImports, getImportById, createImport, updateImport, deleteImport, Im
 // Import n8n webhook service
 import {
   syncInvoicesFromN8n,
-  formatWebhookResult,
-  getWebhookErrorDetails,
-  N8nWebhookResponse,
   N8nWebhookError,
   N8nNetworkError
 } from "@/lib/api/n8n-webhook"
@@ -55,7 +52,6 @@ export default function ImportsPage() {
   const { setTitle } = usePageTitle()
 
   // State cho dữ liệu và UI
-  const [imports, setImports] = useState<ImportInvoice[]>([])
   const [isModalOpen, setIsModalOpen] = useState(false)
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
@@ -86,8 +82,6 @@ export default function ImportsPage() {
   const [isSyncing, setIsSyncing] = useState(false)
   const [syncStartDate, setSyncStartDate] = useState<Date | undefined>(undefined)
   const [syncEndDate, setSyncEndDate] = useState<Date | undefined>(undefined)
-  const [syncResult, setSyncResult] = useState<N8nWebhookResponse | null>(null)
-  const [syncError, setSyncError] = useState<string | null>(null)
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
@@ -346,8 +340,6 @@ export default function ImportsPage() {
 
     try {
       setIsSyncing(true)
-      setSyncError(null)
-      setSyncResult(null)
       setLastSyncTime(Date.now())
 
       const startDateStr = format(syncStartDate, 'yyyy-MM-dd')
@@ -363,42 +355,21 @@ export default function ImportsPage() {
         duration: 5000
       })
 
-      const result = await syncInvoicesFromN8n(startDateStr, endDateStr)
+      await syncInvoicesFromN8n(startDateStr, endDateStr)
 
-      setSyncResult(result)
+      // Đơn giản hóa: nếu 200 OK thì refresh page và đóng modal
+      toast.success("Đồng bộ hóa đơn thành công!", {
+        className: "text-lg font-medium",
+        descriptionClassName: "text-base",
+        duration: 3000
+      })
 
-      // Show success message
-      const resultMessage = formatWebhookResult(result)
+      // Refresh data và đóng modal
+      console.log('Refreshing imports data after successful sync...')
+      await fetchData()
 
-      // Use different toast type based on results
-      if (result.data.summary.total_files === 0) {
-        toast.info(resultMessage, {
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base",
-          duration: 5000
-        })
-        // Auto-close modal for empty results after 2 seconds
-        setTimeout(() => {
-          setIsSyncModalOpen(false)
-        }, 2000)
-      } else {
-        toast.success(resultMessage, {
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base",
-          duration: 5000
-        })
-      }
-
-      // Auto refresh imports list if there were successful imports
-      if (result.data.summary.success_count > 0) {
-        console.log('Refreshing imports list after successful sync')
-        await fetchData()
-
-        // Auto-close modal after successful sync with new invoices
-        setTimeout(() => {
-          setIsSyncModalOpen(false)
-        }, 3000)
-      }
+      // Đóng modal ngay lập tức
+      setIsSyncModalOpen(false)
 
     } catch (error) {
       console.error('Error syncing from n8n:', error)
@@ -416,7 +387,6 @@ export default function ImportsPage() {
         errorDetails = 'Vui lòng kiểm tra kết nối mạng và thử lại'
       }
 
-      setSyncError(errorMessage + (errorDetails ? ` (${errorDetails})` : ''))
       toast.error(errorMessage, {
         description: errorDetails,
         className: "text-lg font-medium",
@@ -430,8 +400,6 @@ export default function ImportsPage() {
 
   // Reset sync modal state
   const resetSyncModal = () => {
-    setSyncResult(null)
-    setSyncError(null)
     setSyncStartDate(undefined)
     setSyncEndDate(undefined)
   }
@@ -981,79 +949,9 @@ export default function ImportsPage() {
                   </div>
                 </div>
 
-                {/* Sync Progress */}
-                {isSyncing && (
-                  <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-                    <div className="flex items-center gap-3">
-                      <div className="h-6 w-6 animate-spin rounded-full border-2 border-blue-600 border-t-transparent"></div>
-                      <div>
-                        <p className="text-blue-800 font-medium">Đang đồng bộ hóa đơn...</p>
-                        <p className="text-blue-600 text-sm">Quá trình có thể mất vài phút đến vài chục phút tùy theo số lượng hóa đơn. Vui lòng không đóng trang này.</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
-                {/* Sync Error */}
-                {syncError && (
-                  <div className="bg-red-50 border border-red-200 rounded-lg p-4">
-                    <div className="flex items-start gap-3">
-                      <FaTimesCircle className="h-5 w-5 text-red-600 mt-0.5" />
-                      <div>
-                        <p className="text-red-800 font-medium">Lỗi đồng bộ</p>
-                        <p className="text-red-600 text-sm">{syncError}</p>
-                      </div>
-                    </div>
-                  </div>
-                )}
 
-                {/* Sync Result */}
-                {syncResult && (
-                  <div className="space-y-4">
-                    <div className="bg-green-50 border border-green-200 rounded-lg p-4">
-                      <div className="flex items-start gap-3">
-                        <FaCheckCircle className="h-5 w-5 text-green-600 mt-0.5" />
-                        <div>
-                          <p className="text-green-800 font-medium">Đồng bộ hoàn thành</p>
-                          <p className="text-green-600 text-sm">{formatWebhookResult(syncResult)}</p>
-                        </div>
-                      </div>
-                    </div>
 
-                    {/* Detailed Results */}
-                    <div className="grid grid-cols-3 gap-4">
-                      <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-green-600">{syncResult.data.summary.success_count}</div>
-                        <div className="text-sm text-gray-600">Thành công</div>
-                      </div>
-                      <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-yellow-600">{syncResult.data.summary.duplicate_count}</div>
-                        <div className="text-sm text-gray-600">Trùng lặp</div>
-                      </div>
-                      <div className="bg-white border border-gray-200 rounded-lg p-3 text-center">
-                        <div className="text-2xl font-bold text-red-600">{syncResult.data.summary.failed_count}</div>
-                        <div className="text-sm text-gray-600">Lỗi</div>
-                      </div>
-                    </div>
-
-                    {/* Error Details */}
-                    {syncResult.data.errors.length > 0 && (
-                      <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
-                        <div className="flex items-start gap-3">
-                          <FaExclamationTriangle className="h-5 w-5 text-yellow-600 mt-0.5" />
-                          <div className="flex-1">
-                            <p className="text-yellow-800 font-medium mb-2">Chi tiết lỗi và trùng lặp:</p>
-                            <div className="space-y-1">
-                              {getWebhookErrorDetails(syncResult).map((error, index) => (
-                                <p key={index} className="text-yellow-700 text-sm">• {error}</p>
-                              ))}
-                            </div>
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
               </div>
 
               <DialogFooter>
@@ -1062,33 +960,31 @@ export default function ImportsPage() {
                   onClick={() => setIsSyncModalOpen(false)}
                   disabled={isSyncing}
                 >
-                  {syncResult ? 'Đóng' : 'Hủy'}
+                  Hủy
                 </Button>
-                {!syncResult && (
-                  <Button
-                    onClick={handleSyncFromN8n}
-                    disabled={isSyncing || !syncStartDate || !syncEndDate || !canSync()}
-                    className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
-                    title={!canSync() ? `Đợi ${Math.ceil((SYNC_COOLDOWN - (Date.now() - lastSyncTime)) / 1000)} giây` : ''}
-                  >
-                    {isSyncing ? (
-                      <>
-                        <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                        Đang đồng bộ...
-                      </>
-                    ) : !canSync() ? (
-                      <>
-                        <FaSync className="mr-2 h-4 w-4" />
-                        Đợi {Math.ceil((SYNC_COOLDOWN - (Date.now() - lastSyncTime)) / 1000)}s
-                      </>
-                    ) : (
-                      <>
-                        <FaSync className="mr-2 h-4 w-4" />
-                        Bắt đầu đồng bộ
-                      </>
-                    )}
-                  </Button>
-                )}
+                <Button
+                  onClick={handleSyncFromN8n}
+                  disabled={isSyncing || !syncStartDate || !syncEndDate || !canSync()}
+                  className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
+                  title={!canSync() ? `Đợi ${Math.ceil((SYNC_COOLDOWN - (Date.now() - lastSyncTime)) / 1000)} giây` : ''}
+                >
+                  {isSyncing ? (
+                    <>
+                      <div className="mr-2 h-4 w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                      Đang đồng bộ...
+                    </>
+                  ) : !canSync() ? (
+                    <>
+                      <FaSync className="mr-2 h-4 w-4" />
+                      Đợi {Math.ceil((SYNC_COOLDOWN - (Date.now() - lastSyncTime)) / 1000)}s
+                    </>
+                  ) : (
+                    <>
+                      <FaSync className="mr-2 h-4 w-4" />
+                      Bắt đầu đồng bộ
+                    </>
+                  )}
+                </Button>
               </DialogFooter>
             </DialogContent>
           </Dialog>
