@@ -98,11 +98,14 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    tokenMonitorRef.current = new TokenMonitor(config);
+    // TẮT TokenMonitor để tránh conflict với axios interceptor đơn giản
+    console.log("🔇 TokenMonitor disabled - using simple axios interceptor approach");
+    // tokenMonitorRef.current = new TokenMonitor(config);
+    // tokenMonitorRef.current.start();
   };
 
   useEffect(() => {
-    // Initialize token monitor
+    // Initialize token monitor (disabled)
     initializeTokenMonitor();
 
     // Kiểm tra dữ liệu đăng nhập trong localStorage khi khởi động
