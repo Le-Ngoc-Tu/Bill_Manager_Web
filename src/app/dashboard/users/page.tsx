@@ -186,7 +186,7 @@ export default function UsersPage() {
       const result = await getUserById(id)
 
       if (result && result.id) {
-        console.log("Loaded user for edit:", result)
+        // console.log("Loaded user for edit:", result)
         setSelectedItem(result)
         setIsModalOpen(true)
       } else {

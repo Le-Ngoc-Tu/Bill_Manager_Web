@@ -8,4 +8,4 @@ export * from './inventory';
 export * from './users';
 export * from './history';
 export * from './reports';
-export * from './ocr';
+// export * from './ocr';

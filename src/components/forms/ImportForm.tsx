@@ -37,8 +37,8 @@ import { createSupplier, getSuppliers } from "@/lib/api/suppliers"
 import { createCustomer, getCustomers } from "@/lib/api/customers"
 import { getInventoryItems } from "@/lib/api/inventory"
 import { addImportDetail, updateImportDetail, deleteImportDetail, updateImport } from "@/lib/api/imports"
-import { uploadPdfToOcr, convertOcrResultToImportDetails, getOriginalOcrResult, getOcrTaskResult } from "@/lib/api/ocr"
-import OcrResultViewer from "@/components/ocr/OcrResultViewer"
+// import { uploadPdfToOcr, convertOcrResultToImportDetails, getOriginalOcrResult, getOcrTaskResult } from "@/lib/api/ocr"
+// import OcrResultViewer from "@/components/ocr/OcrResultViewer"
 
 // Định nghĩa Zod schema để validation
 const importDetailSchema = z.object({
@@ -57,7 +57,7 @@ const importDetailSchema = z.object({
   // Thêm cờ để đánh dấu người dùng đã tự chỉnh sửa
   is_manually_edited: z.boolean().optional().default(false),
   // Thêm trường lưu ID kết quả OCR
-  ocrTaskId: z.string().optional(),
+  // ocrTaskId: z.string().optional(),
   // Removed supplier_id, seller_name, seller_tax_code - now at invoice level
 })
 
@@ -139,9 +139,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   const itemsPerPage = 7
 
   // State cho việc tải lên tập tin PDF
-  const [isPdfUploading, setIsPdfUploading] = useState(false)
-  const [pdfUploadProgress, setPdfUploadProgress] = useState(0)
-  const [isOcrModalOpen, setIsOcrModalOpen] = useState(false)
+  // const [isPdfUploading, setIsPdfUploading] = useState(false)
+  // const [pdfUploadProgress, setPdfUploadProgress] = useState(0)
+  // const [isOcrModalOpen, setIsOcrModalOpen] = useState(false)
 
   // State cho thông tin người bán mặc định
   const [defaultSupplierId, setDefaultSupplierId] = useState<number | null>(null)
@@ -440,7 +440,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           ...initialData,
           invoice_date: initialData.invoice_date ? new Date(initialData.invoice_date) : new Date(),
           details: initialData.details?.map((d: any) => {
-            console.log('Processing detail in defaultValues:', d);
+            // console.log('Processing detail in defaultValues:', d);
             return {
               ...d,
               quantity: Number(d.quantity) || 0,
@@ -666,288 +666,288 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
   }
 
-  // Hàm xử lý tải lên tập tin PDF
-  const handlePdfUpload = async (file: File) => {
-    if (!file || file.type !== "application/pdf") {
-      toast.error("Vui lòng chọn tập tin PDF hợp lệ", {
-        className: "text-lg font-medium",
-        descriptionClassName: "text-base"
-      });
-      return;
-    }
+  // // Hàm xử lý tải lên tập tin PDF
+  // const handlePdfUpload = async (file: File) => {
+  //   if (!file || file.type !== "application/pdf") {
+  //     toast.error("Vui lòng chọn tập tin PDF hợp lệ", {
+  //       className: "text-lg font-medium",
+  //       descriptionClassName: "text-base"
+  //     });
+  //     return;
+  //   }
 
-    try {
-      setIsPdfUploading(true);
-      setPdfUploadProgress(10);
+  //   try {
+  //     setIsPdfUploading(true);
+  //     setPdfUploadProgress(10);
 
-      // Upload file lên OCR API
-      const response = await uploadPdfToOcr(file);
+  //     // Upload file lên OCR API
+  //     const response = await uploadPdfToOcr(file);
 
-      if (response && response.task_id) {
-        setPdfUploadProgress(30);
+  //     if (response && response.task_id) {
+  //       setPdfUploadProgress(30);
 
-        // Tạo một EventSource để lắng nghe tiến trình xử lý OCR
-        const eventSourceUrl = `${process.env.NEXT_PUBLIC_OCR_API_URL || "http://localhost:7011"}/tasks/${response.task_id}/progress`;
-        console.log("Connecting to EventSource:", eventSourceUrl);
-        const eventSource = new EventSource(eventSourceUrl);
+  //       // Tạo một EventSource để lắng nghe tiến trình xử lý OCR
+  //       const eventSourceUrl = `${process.env.NEXT_PUBLIC_OCR_API_URL || "http://localhost:7011"}/tasks/${response.task_id}/progress`;
+  //       console.log("Connecting to EventSource:", eventSourceUrl);
+  //       const eventSource = new EventSource(eventSourceUrl);
 
-        eventSource.onmessage = async (event) => {
-          const data = JSON.parse(event.data);
+  //       eventSource.onmessage = async (event) => {
+  //         const data = JSON.parse(event.data);
 
-          // Cập nhật tiến trình
-          setPdfUploadProgress(Math.min(30 + (data.progress * 0.7), 95));
+  //         // Cập nhật tiến trình
+  //         setPdfUploadProgress(Math.min(30 + (data.progress * 0.7), 95));
 
-          // Nếu đã hoàn thành, lấy kết quả và đóng kết nối
-          if (data.status === "completed" && data.result) {
-            eventSource.close();
+  //         // Nếu đã hoàn thành, lấy kết quả và đóng kết nối
+  //         if (data.status === "completed" && data.result) {
+  //           eventSource.close();
 
-            // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
-            const details = convertOcrResultToImportDetails(data.result);
+  //           // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
+  //           const details = convertOcrResultToImportDetails(data.result);
 
-            // Thêm các chi tiết vào form
-            if (details && details.length > 0) {
-              // Xóa dòng mặc định nếu chưa có dữ liệu
-              if (fields.length === 1 && !form.getValues("details.0.item_name")) {
-                remove(0);
-              }
+  //           // Thêm các chi tiết vào form
+  //           if (details && details.length > 0) {
+  //             // Xóa dòng mặc định nếu chưa có dữ liệu
+  //             if (fields.length === 1 && !form.getValues("details.0.item_name")) {
+  //               remove(0);
+  //             }
 
-              // Trích xuất thông tin người bán từ dòng đầu tiên (nếu có)
-              if (details[0].seller_name) {
-                // Thiết lập thông tin người bán mặc định
-                setDefaultSellerName(details[0].seller_name);
-                setDefaultSellerTaxCode(details[0].seller_tax_code || "");
+              // // Trích xuất thông tin người bán từ dòng đầu tiên (nếu có)
+              // if (details[0].seller_name) {
+              //   // Thiết lập thông tin người bán mặc định
+              //   setDefaultSellerName(details[0].seller_name);
+              //   setDefaultSellerTaxCode(details[0].seller_tax_code || "");
 
-                // Tìm kiếm người bán đã tồn tại
-                let matchedSupplier = null;
-                if (details[0].seller_tax_code) {
-                  matchedSupplier = suppliers.find(
-                    supplier =>
-                      supplier.name.toLowerCase() === details[0].seller_name.toLowerCase() &&
-                      supplier.tax_code === details[0].seller_tax_code
-                  );
-                }
+              //   // Tìm kiếm người bán đã tồn tại
+              //   let matchedSupplier = null;
+              //   if (details[0].seller_tax_code) {
+              //     matchedSupplier = suppliers.find(
+              //       supplier =>
+              //         supplier.name.toLowerCase() === details[0].seller_name.toLowerCase() &&
+              //         supplier.tax_code === details[0].seller_tax_code
+              //     );
+              //   }
 
-                if (!matchedSupplier) {
-                  matchedSupplier = suppliers.find(
-                    supplier => supplier.name.toLowerCase() === details[0].seller_name.toLowerCase()
-                  );
-                }
+              //   if (!matchedSupplier) {
+              //     matchedSupplier = suppliers.find(
+              //       supplier => supplier.name.toLowerCase() === details[0].seller_name.toLowerCase()
+              //     );
+              //   }
 
-                if (matchedSupplier) {
-                  setDefaultSupplierId(matchedSupplier.id);
-                  // Set supplier info at invoice level
-                  form.setValue("supplier_id", matchedSupplier.id);
-                } else {
-                  setDefaultSupplierId(null);
-                }
+              //   if (matchedSupplier) {
+              //     setDefaultSupplierId(matchedSupplier.id);
+              //     // Set supplier info at invoice level
+              //     form.setValue("supplier_id", matchedSupplier.id);
+              //   } else {
+              //     setDefaultSupplierId(null);
+              //   }
 
-                // Set seller info at invoice level
-                form.setValue("seller_name", details[0].seller_name);
-                form.setValue("seller_tax_code", details[0].seller_tax_code || "");
-              }
+              //   // Set seller info at invoice level
+              //   form.setValue("seller_name", details[0].seller_name);
+              //   form.setValue("seller_tax_code", details[0].seller_tax_code || "");
+              // }
 
-              // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa đã tồn tại
-              details.forEach(detail => {
-                // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
-                let matchedInventory = null;
-                if (detail.item_name) {
-                  matchedInventory = inventoryItems.find(
-                    item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
-                  );
+              // // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa đã tồn tại
+              // details.forEach(detail => {
+              //   // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
+              //   let matchedInventory = null;
+              //   if (detail.item_name) {
+              //     matchedInventory = inventoryItems.find(
+              //       item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+              //     );
 
-                  if (matchedInventory) {
-                    console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
-                    // Cập nhật thông tin hàng hóa
-                    detail.inventory_id = matchedInventory.id;
-                    detail.unit = detail.unit || matchedInventory.unit;
-                    detail.category = matchedInventory.category as "HH" | "CP";
-                  }
-                }
+              //     if (matchedInventory) {
+              //       console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+              //       // Cập nhật thông tin hàng hóa
+              //       detail.inventory_id = matchedInventory.id;
+              //       detail.unit = detail.unit || matchedInventory.unit;
+              //       detail.category = matchedInventory.category as "HH" | "CP";
+              //     }
+              //   }
 
-                // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
-                let matchedSupplier = null;
-                if (detail.seller_name) {
-                  // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
-                  if (detail.seller_tax_code) {
-                    matchedSupplier = suppliers.find(
-                      supplier =>
-                        supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
-                        supplier.tax_code === detail.seller_tax_code
-                    );
-                  }
+              //   // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
+              //   let matchedSupplier = null;
+              //   if (detail.seller_name) {
+              //     // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
+              //     if (detail.seller_tax_code) {
+              //       matchedSupplier = suppliers.find(
+              //         supplier =>
+              //           supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
+              //           supplier.tax_code === detail.seller_tax_code
+              //       );
+              //     }
 
-                  // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
-                  if (!matchedSupplier) {
-                    matchedSupplier = suppliers.find(
-                      supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
-                    );
-                  }
+              //     // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
+              //     if (!matchedSupplier) {
+              //       matchedSupplier = suppliers.find(
+              //         supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
+              //       );
+              //     }
 
-                  if (matchedSupplier) {
-                    console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
-                    // Cập nhật thông tin người bán
-                    detail.supplier_id = matchedSupplier.id;
-                    detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
-                  }
-                }
+              //     if (matchedSupplier) {
+              //       console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
+              //       // Cập nhật thông tin người bán
+              //       detail.supplier_id = matchedSupplier.id;
+              //       detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
+              //     }
+              //   }
 
-                append({
-                  ...detail,
-                  category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
-                  is_manually_edited: false,
-                });
-              });
+              //   append({
+              //     ...detail,
+              //     category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
+              //     is_manually_edited: false,
+              //   });
+              // });
 
-              // Tự động tính toán invoice totals sau OCR extract
-              setTimeout(() => {
-                handleOcrAutoCalculation(details.length);
-              }, 100);
+              // // Tự động tính toán invoice totals sau OCR extract
+              // setTimeout(() => {
+              //   handleOcrAutoCalculation(details.length);
+              // }, 100);
 
-              // Toast message đã được hiển thị trong setTimeout ở trên
-            } else {
-              toast.warning("Không tìm thấy dữ liệu hàng hóa", {
-                description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
-                className: "text-lg font-medium",
-                descriptionClassName: "text-base"
-              });
-            }
+              // // Toast message đã được hiển thị trong setTimeout ở trên
+            // } else {
+            //   toast.warning("Không tìm thấy dữ liệu hàng hóa", {
+            //     description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
+            //     className: "text-lg font-medium",
+            //     descriptionClassName: "text-base"
+            //   });
+            // }
 
-            setPdfUploadProgress(100);
-            setIsPdfUploading(false);
-            setIsOcrModalOpen(false);
-          }
-        };
+            // setPdfUploadProgress(100);
+            // setIsPdfUploading(false);
+            // setIsOcrModalOpen(false);
+          // }
+        // };
 
-        // Xử lý sự kiện khi kết nối được mở
-        eventSource.onopen = () => {
-          console.log("EventSource connection opened successfully");
-        };
+        // // Xử lý sự kiện khi kết nối được mở
+        // eventSource.onopen = () => {
+        //   console.log("EventSource connection opened successfully");
+        // };
 
-        // Xử lý sự kiện lỗi
-        eventSource.onerror = (error) => {
-          console.error("EventSource error:", error);
+        // // Xử lý sự kiện lỗi
+        // eventSource.onerror = (error) => {
+        //   console.error("EventSource error:", error);
 
-          // Đóng kết nối
-          eventSource.close();
-          setIsPdfUploading(false);
+        //   // Đóng kết nối
+        //   eventSource.close();
+        //   setIsPdfUploading(false);
 
-          // Thử lấy kết quả trực tiếp nếu EventSource gặp lỗi
-          getOcrTaskResult(response.task_id)
-            .then((result: any) => {
-              if (result) {
-                console.log("Retrieved OCR result directly:", result);
-                // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
-                const details = convertOcrResultToImportDetails(result);
+        //   // Thử lấy kết quả trực tiếp nếu EventSource gặp lỗi
+        //   getOcrTaskResult(response.task_id)
+        //     .then((result: any) => {
+        //       if (result) {
+        //         console.log("Retrieved OCR result directly:", result);
+        //         // Chuyển đổi kết quả OCR thành dữ liệu chi tiết hóa đơn
+        //         const details = convertOcrResultToImportDetails(result);
 
-                // Xử lý kết quả tương tự như trong onmessage
-                if (details && details.length > 0) {
-                  // Xóa dòng mặc định nếu chưa có dữ liệu
-                  if (fields.length === 1 && !form.getValues("details.0.item_name")) {
-                    remove(0);
-                  }
+        //         // Xử lý kết quả tương tự như trong onmessage
+        //         if (details && details.length > 0) {
+        //           // Xóa dòng mặc định nếu chưa có dữ liệu
+        //           if (fields.length === 1 && !form.getValues("details.0.item_name")) {
+        //             remove(0);
+        //           }
 
-                  // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa và người bán đã tồn tại
-                  details.forEach(detail => {
-                    // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
-                    let matchedInventory = null;
-                    if (detail.item_name) {
-                      matchedInventory = inventoryItems.find(
-                        item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
-                      );
+        //           // Thêm các chi tiết mới và tự động tìm kiếm hàng hóa và người bán đã tồn tại
+        //           details.forEach(detail => {
+                    // // Tìm kiếm hàng hóa đã tồn tại dựa trên tên
+                    // let matchedInventory = null;
+                    // if (detail.item_name) {
+                    //   matchedInventory = inventoryItems.find(
+                    //     item => item.item_name.toLowerCase() === detail.item_name.toLowerCase()
+                    //   );
 
-                      if (matchedInventory) {
-                        console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
-                        // Cập nhật thông tin hàng hóa
-                        detail.inventory_id = matchedInventory.id;
-                        detail.unit = detail.unit || matchedInventory.unit;
-                        detail.category = matchedInventory.category as "HH" | "CP";
-                      }
-                    }
+                    //   if (matchedInventory) {
+                    //     console.log(`Found existing inventory with matching name: ${matchedInventory.item_name}, ID: ${matchedInventory.id}`);
+                    //     // Cập nhật thông tin hàng hóa
+                    //     detail.inventory_id = matchedInventory.id;
+                    //     detail.unit = detail.unit || matchedInventory.unit;
+                    //     detail.category = matchedInventory.category as "HH" | "CP";
+                    //   }
+                    // }
 
-                    // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
-                    let matchedSupplier = null;
-                    if (detail.seller_name) {
-                      // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
-                      if (detail.seller_tax_code) {
-                        matchedSupplier = suppliers.find(
-                          supplier =>
-                            supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
-                            supplier.tax_code === detail.seller_tax_code
-                        );
-                      }
+                    // // Tìm kiếm người bán đã tồn tại dựa trên tên và mã số thuế
+                    // let matchedSupplier = null;
+                    // if (detail.seller_name) {
+                    //   // Tìm kiếm nhà cung cấp trùng khớp cả tên và mã số thuế (nếu có)
+                    //   if (detail.seller_tax_code) {
+                    //     matchedSupplier = suppliers.find(
+                    //       supplier =>
+                    //         supplier.name.toLowerCase() === detail.seller_name.toLowerCase() &&
+                    //         supplier.tax_code === detail.seller_tax_code
+                    //     );
+                    //   }
 
-                      // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
-                      if (!matchedSupplier) {
-                        matchedSupplier = suppliers.find(
-                          supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
-                        );
-                      }
+                    //   // Nếu không tìm thấy, tìm kiếm chỉ dựa trên tên
+                    //   if (!matchedSupplier) {
+                    //     matchedSupplier = suppliers.find(
+                    //       supplier => supplier.name.toLowerCase() === detail.seller_name.toLowerCase()
+                    //     );
+                    //   }
 
-                      if (matchedSupplier) {
-                        console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
-                        // Cập nhật thông tin người bán
-                        detail.supplier_id = matchedSupplier.id;
-                        detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
-                      }
-                    }
+                    //   if (matchedSupplier) {
+                    //     console.log(`Found existing supplier with matching name: ${matchedSupplier.name}, ID: ${matchedSupplier.id}`);
+                    //     // Cập nhật thông tin người bán
+                    //     detail.supplier_id = matchedSupplier.id;
+                    //     detail.seller_tax_code = detail.seller_tax_code || matchedSupplier.tax_code || "";
+                    //   }
+                    // }
 
-                    append({
-                      ...detail,
-                      category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
-                      is_manually_edited: false,
-                    });
-                  });
+                    // append({
+                    //   ...detail,
+                    //   category: detail.category as "HH" | "CP", // Ép kiểu category thành "HH" | "CP"
+                    //   is_manually_edited: false,
+                    // });
+                  // });
 
-                  // Tự động tính toán invoice totals sau OCR extract (fallback)
-                  setTimeout(() => {
-                    handleOcrAutoCalculation(details.length);
-                  }, 100);
-                } else {
-                  toast.warning("Không tìm thấy dữ liệu hàng hóa", {
-                    description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
-                    className: "text-lg font-medium",
-                    descriptionClassName: "text-base"
-                  });
-                }
+                  // // Tự động tính toán invoice totals sau OCR extract (fallback)
+                  // setTimeout(() => {
+                  //   handleOcrAutoCalculation(details.length);
+                  // }, 100);
+                // } else {
+                //   toast.warning("Không tìm thấy dữ liệu hàng hóa", {
+                //     description: "Không thể trích xuất dữ liệu hàng hóa từ tập tin PDF này",
+                //     className: "text-lg font-medium",
+                //     descriptionClassName: "text-base"
+                //   });
+                // }
 
-                setPdfUploadProgress(100);
-                setIsPdfUploading(false);
-                setIsOcrModalOpen(false);
-              } else {
-                toast.error("Lỗi khi xử lý tập tin PDF", {
-                  description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
-                  className: "text-lg font-medium",
-                  descriptionClassName: "text-base"
-                });
-              }
-            })
-            .catch((err: Error) => {
-              console.error("Error getting OCR result directly:", err);
-              toast.error("Lỗi khi xử lý tập tin PDF", {
-                description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
-                className: "text-lg font-medium",
-                descriptionClassName: "text-base"
-              });
-            });
-        };
-      } else {
-        setIsPdfUploading(false);
-        toast.error("Lỗi khi tải lên tập tin PDF", {
-          description: "Không thể tải lên tập tin PDF. Vui lòng thử lại sau.",
-          className: "text-lg font-medium",
-          descriptionClassName: "text-base"
-        });
-      }
-    } catch (error) {
-      console.error("Error uploading PDF:", error);
-      setIsPdfUploading(false);
-      toast.error("Lỗi khi tải lên tập tin PDF", {
-        description: "Đã xảy ra lỗi khi tải lên tập tin PDF. Vui lòng thử lại sau.",
-        className: "text-lg font-medium",
-        descriptionClassName: "text-base"
-      });
-    }
-  }
+                // setPdfUploadProgress(100);
+                // setIsPdfUploading(false);
+                // setIsOcrModalOpen(false);
+              // } else {
+              //   toast.error("Lỗi khi xử lý tập tin PDF", {
+              //     description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
+              //     className: "text-lg font-medium",
+              //     descriptionClassName: "text-base"
+              //   });
+              // }
+            // })
+            // .catch((err: Error) => {
+            //   console.error("Error getting OCR result directly:", err);
+            //   toast.error("Lỗi khi xử lý tập tin PDF", {
+            //     description: "Đã xảy ra lỗi khi xử lý tập tin PDF. Vui lòng thử lại sau.",
+            //     className: "text-lg font-medium",
+            //     descriptionClassName: "text-base"
+            //   });
+            // });
+        // };
+      // } else {
+      //   setIsPdfUploading(false);
+      //   toast.error("Lỗi khi tải lên tập tin PDF", {
+      //     description: "Không thể tải lên tập tin PDF. Vui lòng thử lại sau.",
+      //     className: "text-lg font-medium",
+      //     descriptionClassName: "text-base"
+      //   });
+      // }
+    // } catch (error) {
+    //   console.error("Error uploading PDF:", error);
+    //   setIsPdfUploading(false);
+    //   toast.error("Lỗi khi tải lên tập tin PDF", {
+    //     description: "Đã xảy ra lỗi khi tải lên tập tin PDF. Vui lòng thử lại sau.",
+    //     className: "text-lg font-medium",
+    //     descriptionClassName: "text-base"
+    //   });
+    // }
+  // }
 
   // Tính toán tổng tiền cho từng dòng
   const calculateDetailTotals = (index: number, forceCalculation = false) => {
@@ -1042,31 +1042,31 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     form.setValue("total_after_tax", totalAfterTax)
   }
 
-  // Helper function cho auto-calculation sau OCR extract
-  const handleOcrAutoCalculation = (extractedItemsCount: number) => {
-    // Cập nhật tổng tiền invoice từ item details đã có
-    updateInvoiceTotals();
+  // // Helper function cho auto-calculation sau OCR extract
+  // const handleOcrAutoCalculation = (extractedItemsCount: number) => {
+  //   // Cập nhật tổng tiền invoice từ item details đã có
+  //   updateInvoiceTotals();
 
-    // Cập nhật display values
-    const allDetails = form.getValues("details");
-    const newTotalBeforeTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_before_tax) || 0), 0);
-    const newTotalTax = allDetails.reduce((sum, detail) => sum + (Number(detail.tax_amount) || 0), 0);
-    const newTotalAfterTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_after_tax) || 0), 0);
+  //   // Cập nhật display values
+  //   const allDetails = form.getValues("details");
+  //   const newTotalBeforeTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_before_tax) || 0), 0);
+  //   const newTotalTax = allDetails.reduce((sum, detail) => sum + (Number(detail.tax_amount) || 0), 0);
+  //   const newTotalAfterTax = allDetails.reduce((sum, detail) => sum + (Number(detail.total_after_tax) || 0), 0);
 
-    setTotalBeforeTaxDisplay(formatCurrencyInput(newTotalBeforeTax));
-    setTotalTaxDisplay(formatCurrencyInput(newTotalTax));
-    setTotalAfterTaxDisplay(formatCurrencyInput(newTotalAfterTax));
+  //   setTotalBeforeTaxDisplay(formatCurrencyInput(newTotalBeforeTax));
+  //   setTotalTaxDisplay(formatCurrencyInput(newTotalTax));
+  //   setTotalAfterTaxDisplay(formatCurrencyInput(newTotalAfterTax));
 
-    // Kích hoạt cập nhật UI cho toàn bộ form
-    form.trigger();
+  //   // Kích hoạt cập nhật UI cho toàn bộ form
+  //   form.trigger();
 
-    // Hiển thị thông báo thành công với thông tin tổng tiền
-    toast.success("Trích xuất và tính toán hoàn thành", {
-      description: `Đã trích xuất ${extractedItemsCount} mặt hàng và tính toán tổng tiền tự động`,
-      className: "text-lg font-medium",
-      descriptionClassName: "text-base"
-    });
-  }
+  //   // Hiển thị thông báo thành công với thông tin tổng tiền
+  //   toast.success("Trích xuất và tính toán hoàn thành", {
+  //     description: `Đã trích xuất ${extractedItemsCount} mặt hàng và tính toán tổng tiền tự động`,
+  //     className: "text-lg font-medium",
+  //     descriptionClassName: "text-base"
+  //   });
+  // }
 
   // Hàm tính toán thủ công cho tất cả items - Force recalculation
   const handleManualCalculation = async () => {
@@ -1420,8 +1420,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       // Trigger validation cho tất cả các trường
       form.trigger();
 
-      console.log("Form values after delete:", form.getValues());
-      console.log("Form errors after delete:", form.formState.errors);
+      // console.log("Form values after delete:", form.getValues());
+      // console.log("Form errors after delete:", form.formState.errors);
 
       // Hiển thị thông báo thành công
       toast.success("Xóa hàng hóa thành công", {
@@ -1463,11 +1463,11 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     const sellerName = form.getValues("seller_name");
     const sellerTaxCode = form.getValues("seller_tax_code");
 
-    console.log("Checking supplier creation:", {
-      sellerName,
-      sellerTaxCode,
-      currentSupplierId: form.getValues("supplier_id")
-    });
+    // console.log("Checking supplier creation:", {
+    //   sellerName,
+    //   sellerTaxCode,
+    //   currentSupplierId: form.getValues("supplier_id")
+    // });
 
     if (sellerName && !form.getValues("supplier_id")) {
       try {
@@ -1714,10 +1714,10 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
     }
 
     // Debug dữ liệu form
-    console.log("Original form data:", data);
-    console.log("Modified form data being submitted:", formData);
-    console.log("Note field in form data:", formData.note);
-    console.log("Details in form data:", formData.details);
+    // console.log("Original form data:", data);
+    // console.log("Modified form data being submitted:", formData);
+    // console.log("Note field in form data:", formData.note);
+    // console.log("Details in form data:", formData.details);
     // Kiểm tra xem có hàng hóa mới nào chưa được lưu không
     if (mode === "edit" && initialData?.id) {
       const details = formData.details;
@@ -1935,27 +1935,27 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
     // Lấy lại dữ liệu form sau khi reset
     const finalData = form.getValues();
-    console.log("Final data for submit:", finalData);
-    console.log("Supplier and Customer IDs:", {
-      supplier_id: finalData.supplier_id,
-      customer_id: finalData.customer_id,
-      seller_name: finalData.seller_name,
-      seller_tax_code: finalData.seller_tax_code,
-      buyer_name: finalData.buyer_name,
-      buyer_tax_code: finalData.buyer_tax_code
-    });
-    console.log("Manual edit flags:", {
-      is_invoice_totals_manually_edited: finalData.is_invoice_totals_manually_edited,
-      total_before_tax: finalData.total_before_tax,
-      total_tax: finalData.total_tax,
-      total_after_tax: finalData.total_after_tax
-    });
+    // console.log("Final data for submit:", finalData);
+    // console.log("Supplier and Customer IDs:", {
+    //   supplier_id: finalData.supplier_id,
+    //   customer_id: finalData.customer_id,
+    //   seller_name: finalData.seller_name,
+    //   seller_tax_code: finalData.seller_tax_code,
+    //   buyer_name: finalData.buyer_name,
+    //   buyer_tax_code: finalData.buyer_tax_code
+    // });
+    // console.log("Manual edit flags:", {
+    //   is_invoice_totals_manually_edited: finalData.is_invoice_totals_manually_edited,
+    //   total_before_tax: finalData.total_before_tax,
+    //   total_tax: finalData.total_tax,
+    //   total_after_tax: finalData.total_after_tax
+    // });
     onSubmit(finalData);
   };
 
   // Hàm xử lý khi submit form không hợp lệ
   const handleInvalidSubmit = (errors: any) => {
-    console.log("Form validation errors:", errors);
+    // console.log("Form validation errors:", errors);
     // Đánh dấu form đã được submit để hiển thị lỗi
     setIsSubmitted(true);
 
@@ -2288,7 +2288,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
       <div className="max-w-full">
         <Label className="text-sm md:text-base mb-1 md:mb-2 block">Tổng tiền</Label>
         <div className="p-3 border rounded-md bg-yellow-50 space-y-2 max-w-full">
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
             {/* Tổng tiền trước thuế */}
             <div className="flex-1">
               <Label htmlFor="total_before_tax" className="text-sm font-medium text-gray-700 mb-1 block">Tổng tiền trước thuế:</Label>
@@ -2425,9 +2425,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 />
               )}
             </div>
-          </div>
-          {/* Tổng thanh toán - full width với border-t */}
-          <div className="pt-2">
+            {/* Tổng thanh toán */}
             <div className="flex-1">
               <Label htmlFor="total_payment" className="text-sm font-bold text-gray-700 mb-1 block">Tổng thanh toán:</Label>
               {isViewMode ? (
@@ -2562,7 +2560,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                 )}
               </Button>
 
-              <div className="flex flex-col sm:flex-row gap-1">
+              {/* <div className="flex flex-col sm:flex-row gap-1">
                 <Button
                   type="button"
                   variant="outline"
@@ -2573,10 +2571,10 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                     <path d="M13 13h3a3 3 0 0 0 0-6h-.025A5.56 5.56 0 0 0 16 6.5 5.5 5.5 0 0 0 5.207 5.021C5.137 5.017 5.071 5 5 5a4 4 0 0 0 0 8h2.167M10 15V6m0 0L8 8m2-2 2 2" stroke="currentColor" strokeLinecap="round" strokeLinejoin="round" strokeWidth="2"/>
                   </svg>
                   Trích xuất từ PDF
-                </Button>
+                </Button> */}
 
                 {/* Nút xem kết quả OCR chung cho toàn bộ hóa đơn */}
-                {fields.some(field => form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`)) && (
+                {/* {fields.some(field => form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`)) && (
                   <OcrResultViewer
                     ocrResult={getOriginalOcrResult(
                       fields.find(field => form.getValues(`details.${fields.indexOf(field)}.ocrTaskId`))
@@ -2589,8 +2587,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                     buttonLabel="Xem kết quả OCR"
                     buttonClassName="px-3 md:px-4 h-7 md:h-8 text-xs w-full sm:w-auto bg-blue-100 hover:bg-blue-200 border-blue-200 text-blue-700"
                   />
-                )}
-              </div>
+                )} */}
+              {/* </div> */}
             </div>
           )}
         </div>
@@ -3304,7 +3302,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
 
 
       {/* Modal tải lên tập tin PDF */}
-      <Dialog open={isOcrModalOpen} onOpenChange={setIsOcrModalOpen}>
+      {/* <Dialog open={isOcrModalOpen} onOpenChange={setIsOcrModalOpen}>
         <DialogContent className="max-w-[90vw] sm:max-w-[500px] p-3 md:p-6">
           <DialogHeader>
             <DialogTitle className="text-lg md:text-xl">Trích xuất dữ liệu từ PDF</DialogTitle>
@@ -3367,7 +3365,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
             </DialogFooter>
           </div>
         </DialogContent>
-      </Dialog>
+      </Dialog> */}
     </form>
   )
 }

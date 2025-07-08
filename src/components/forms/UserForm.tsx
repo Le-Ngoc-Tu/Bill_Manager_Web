@@ -134,7 +134,7 @@ export function UserForm({ mode, initialData, onSubmit, onCancel, stickyFooter =
         }
 
         // Log ID để debug
-        console.log("Updating user with ID:", initialData.id)
+        // console.log("Updating user with ID:", initialData.id)
         result = await updateUser(initialData.id, values)
 
         if (result && result.code === 1) {

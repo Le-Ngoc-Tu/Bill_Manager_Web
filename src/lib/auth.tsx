@@ -109,18 +109,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     initializeTokenMonitor();
 
     // Kiểm tra dữ liệu đăng nhập trong localStorage khi khởi động
-    console.log("AuthProvider initialized, checking localStorage");
+    // console.log("AuthProvider initialized, checking localStorage");
     try {
       const accessToken = localStorage.getItem("accessToken");
       const userData = localStorage.getItem("user");
 
       if (accessToken && userData) {
-        console.log("Found stored user data and token");
+        // console.log("Found stored user data and token");
         setUser(JSON.parse(userData));
         // Kiểm tra token có hợp lệ không
         validateToken();
       } else {
-        console.log("No stored user data or token found");
+        // console.log("No stored user data or token found");
         setLoading(false);
       }
     } catch (error) {
@@ -320,7 +320,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   // Đăng nhập (giữ lại để tương thích với code cũ)
   const login = (username: string) => {
-    console.log(`User logged in: ${username}`);
+    // console.log(`User logged in: ${username}`);
     const newUser = {
       id: 1,
       username,
@@ -363,7 +363,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       localStorage.removeItem("user");
       localStorage.removeItem("lastActivity");
 
-      console.log("Đã đăng xuất và xóa dữ liệu người dùng");
+      // console.log("Đã đăng xuất và xóa dữ liệu người dùng");
 
       // Chuyển hướng về trang đăng nhập
       router.push("/login");
@@ -400,7 +400,7 @@ export function withAuth<T extends object>(Component: React.ComponentType<T>) {
     const router = useRouter();
 
     useEffect(() => {
-      console.log("withAuth HOC check:", { user, loading });
+      // console.log("withAuth HOC check:", { user, loading });
       if (!loading && !user) {
         router.push("/login");
       }

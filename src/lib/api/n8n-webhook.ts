@@ -64,7 +64,7 @@ export class N8nNetworkError extends Error {
 
 // Configuration
 const N8N_WEBHOOK_CONFIG = {
-  url: 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd5',
+  url: process.env.N8N_WEBHOOK_URL || 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd5',
   timeout: 60000, // 60 seconds timeout
   headers: {
     'Content-Type': 'application/json',
@@ -159,7 +159,7 @@ export const syncInvoicesFromN8n = async (
         throw new N8nWebhookError('Received HTML response instead of JSON (possible server error)');
       }
 
-      throw new N8nWebhookError(`Invalid JSON response: ${parseError.message}`);
+      throw new N8nWebhookError(`Invalid JSON response: ${parseError instanceof Error ? parseError.message : 'Unknown parse error'}`);
     }
 
     console.log('Parsed n8n webhook response:', data);

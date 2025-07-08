@@ -69,8 +69,8 @@ export function NavUser({
       if (storedUser) {
         const parsedUser = JSON.parse(storedUser)
         setCachedUserInfo(parsedUser)
-        console.log("Đã tải thông tin người dùng từ localStorage:", parsedUser)
-        console.log("Fullname từ localStorage:", parsedUser.fullname)
+        // console.log("Đã tải thông tin người dùng từ localStorage:", parsedUser)
+        // console.log("Fullname từ localStorage:", parsedUser.fullname)
       }
     } catch (error) {
       console.error("Error reading user from localStorage:", error)
@@ -79,11 +79,11 @@ export function NavUser({
 
   // Debug log để xem dữ liệu người dùng
   useEffect(() => {
-    console.log("Auth User:", authUser)
-    console.log("Auth User Fullname:", authUser?.fullname)
-    console.log("Cached User:", cachedUserInfo)
-    console.log("Cached User Fullname:", cachedUserInfo?.fullname)
-    console.log("Default User:", user)
+    // console.log("Auth User:", authUser)
+    // console.log("Auth User Fullname:", authUser?.fullname)
+    // console.log("Cached User:", cachedUserInfo)
+    // console.log("Cached User Fullname:", cachedUserInfo?.fullname)
+    // console.log("Default User:", user)
   }, [authUser, cachedUserInfo, user])
 
   const handleLogout = () => {
