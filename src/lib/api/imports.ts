@@ -198,6 +198,101 @@ export const deleteImport = async (id: number) => {
   }
 };
 
+// ===== XML PREVIEW APIs =====
+
+// Interface cho XML preview data
+export interface XMLPreviewData {
+  general: {
+    invoiceNumber: string;
+    issueDate: string;
+    invoiceType?: string;
+    currencyCode?: string;
+  };
+  seller: {
+    name: string;
+    taxCode?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  };
+  buyer: {
+    name: string;
+    taxCode?: string;
+    address?: string;
+    phone?: string;
+    email?: string;
+  };
+  items: Array<{
+    itemName: string;
+    unit: string;
+    quantity: number;
+    priceBeforeTax: number;
+    totalBeforeTax: number;
+    taxRate: string;
+    taxAmount: number;
+    totalAfterTax: number;
+    category: "HH" | "CP";
+  }>;
+  totals: {
+    totalBeforeTax: number;
+    totalTax: number;
+    totalAfterTax: number;
+  };
+}
+
+export interface XMLPreviewResponse {
+  tempFileId: string;
+  fileName: string;
+  previewData: XMLPreviewData;
+}
+
+// Upload XML và lấy preview data
+export const uploadXMLPreview = async (file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await apiClient.post('/invoices/xml/upload-preview', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error("Error uploading XML preview:", error);
+    throw error;
+  }
+};
+
+// Lưu preview data vào database
+export const saveXMLPreview = async (tempFileId: string, previewData: XMLPreviewData) => {
+  try {
+    const response = await apiClient.post('/invoices/xml/save-from-preview', {
+      tempFileId,
+      previewData,
+      confirmed: true
+    });
+
+    return response.data;
+  } catch (error) {
+    console.error("Error saving XML preview:", error);
+    throw error;
+  }
+};
+
+// Hủy preview và xóa file tạm
+export const cancelXMLPreview = async (tempFileId: string) => {
+  try {
+    const response = await apiClient.delete(`/invoices/xml/cancel-preview/${tempFileId}`);
+
+    return response.data;
+  } catch (error) {
+    console.error("Error canceling XML preview:", error);
+    throw error;
+  }
+};
+
 // Thêm chi tiết hàng hóa mới vào hóa đơn
 export const addImportDetail = async (importId: number, detailData: any) => {
   try {

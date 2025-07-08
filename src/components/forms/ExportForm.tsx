@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useForm, Controller, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -116,6 +116,25 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     const [inventoryItems, setInventoryItems] = useState<Inventory[]>([])
     const [loading, setLoading] = useState(false)
     const [error, setError] = useState<string | null>(null)
+    const [inventoryLoading, setInventoryLoading] = useState(false)
+    const [inventorySearchCache, setInventorySearchCache] = useState<{[key: string]: Inventory[]}>({})
+
+    // Debounce hook
+    const useDebounce = (value: string, delay: number) => {
+        const [debouncedValue, setDebouncedValue] = useState(value)
+
+        useEffect(() => {
+            const handler = setTimeout(() => {
+                setDebouncedValue(value)
+            }, delay)
+
+            return () => {
+                clearTimeout(handler)
+            }
+        }, [value, delay])
+
+        return debouncedValue
+    }
     const [isSubmitted, setIsSubmitted] = useState(false)
     const [inventoryError, setInventoryError] = useState<{ [key: number]: string }>({})
     const [itemNameError, setItemNameError] = useState<{ [key: number]: string }>({})
@@ -606,7 +625,40 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     // LOẠI BỎ auto-calculation useEffect - chỉ tính toán khi manual calculation
     // useEffect đã bị loại bỏ để tắt auto-calculation hoàn toàn
 
-    // Fetch customers và inventory items từ API
+    // Search inventory items với debounce và cache
+    const searchInventoryItems = useCallback(async (searchTerm: string) => {
+        if (!searchTerm || searchTerm.length < 2) {
+            setInventoryItems([])
+            return
+        }
+
+        // Kiểm tra cache trước
+        if (inventorySearchCache[searchTerm]) {
+            setInventoryItems(inventorySearchCache[searchTerm])
+            return
+        }
+
+        setInventoryLoading(true)
+        try {
+            const inventoryResult = await getInventoryItems(false, "", true, searchTerm) // includeLatestImportPrice = true
+            if (inventoryResult && inventoryResult.success) {
+                const items = inventoryResult.data || []
+                setInventoryItems(items)
+
+                // Cache kết quả
+                setInventorySearchCache(prev => ({
+                    ...prev,
+                    [searchTerm]: items
+                }))
+            }
+        } catch (err) {
+            console.error("Error searching inventory:", err)
+        } finally {
+            setInventoryLoading(false)
+        }
+    }, [inventorySearchCache])
+
+    // Fetch chỉ suppliers và customers từ API (bỏ inventory items)
     useEffect(() => {
         const fetchData = async () => {
             setLoading(true)
@@ -626,20 +678,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     setCustomers(customersData)
                 }
 
-                // Fetch inventory items sử dụng API với thông tin giá nhập gần nhất
-                const inventoryResult = await getInventoryItems(false, "", true) // includeLatestImportPrice = true
-                if (inventoryResult && inventoryResult.success) {
-                    const inventoryData = inventoryResult.data || [];
-                    // console.log("📦 Inventory items loaded:", inventoryData.length);
-                    // console.log("📦 Sample inventory items:", inventoryData.slice(0, 3).map((item: Inventory) => ({
-                    //     id: item.id,
-                    //     name: item.item_name,
-                    //     unit: item.unit,
-                    //     quantity: item.quantity,
-                    //     category: item.category
-                    // })));
-                    setInventoryItems(inventoryData);
-                }
+                // ✅ LOẠI BỎ fetch inventory items - sẽ lazy load khi cần
             } catch (err) {
                 console.error("Error fetching data:", err)
                 setError("Đã xảy ra lỗi khi tải dữ liệu")
@@ -652,7 +691,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
     }, [])
 
     // Hàm xử lý xóa lỗi khi người dùng thay đổi giá trị
-    const handleDetailFieldChange = (index: number) => {
+    const handleDetailFieldChange = (index: number, clearInventoryError: boolean = true) => {
         // Xóa lỗi của chi tiết cụ thể
         form.clearErrors(`details.${index}`)
 
@@ -661,10 +700,12 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             form.clearErrors("details")
         }
 
-        // Xóa lỗi tồn kho
-        const newInventoryError = { ...inventoryError }
-        delete newInventoryError[index]
-        setInventoryError(newInventoryError)
+        // Chỉ xóa lỗi tồn kho nếu clearInventoryError = true
+        if (clearInventoryError) {
+            const newInventoryError = { ...inventoryError }
+            delete newInventoryError[index]
+            setInventoryError(newInventoryError)
+        }
 
         // Xóa lỗi tên hàng
         const newItemNameError = { ...itemNameError }
@@ -1042,18 +1083,13 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             // Kiểm tra tồn kho trước khi cho phép chọn
             const currentQuantity = form.getValues(`details.${index}.quantity`) || 0
             if (matchedItem.quantity < currentQuantity) {
-                // Cập nhật lỗi tồn kho
+                // ✅ Thay đổi logic: Hiển thị thông tin xuất kho thay vì lỗi
                 setInventoryError({
                     ...inventoryError,
-                    [index]: `Không đủ hàng trong kho! Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${currentQuantity}`
+                    [index]: `Đang xuất: ${currentQuantity} ${matchedItem.unit} > Tồn kho: ${Number(matchedItem.quantity)} ${matchedItem.unit}`
                 })
 
-                // Hiển thị thông báo toast
-                toast.error("Vượt quá số lượng tồn kho", {
-                    description: `Không đủ hàng trong kho! ${matchedItem.item_name}: Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${currentQuantity}`,
-                    className: "text-lg font-medium",
-                    descriptionClassName: "text-base"
-                })
+                // ✅ Bỏ toast error theo yêu cầu user
             } else {
                 // Xóa lỗi tồn kho nếu số lượng đủ
                 const newInventoryError = { ...inventoryError }
@@ -1122,6 +1158,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
 
         // Kiểm tra tồn kho cho hàng hóa thông thường
         const inventoryId = form.getValues(`details.${index}.inventory_id`)
+
         if (inventoryId) {
             const matchedItem = inventoryItems.find(item => item.id === inventoryId)
 
@@ -1162,15 +1199,10 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     if (numValue > oldQuantity && matchedItem && matchedItem.quantity < (numValue - oldQuantity)) {
                         setInventoryError({
                             ...inventoryError,
-                            [index]: `Không đủ hàng trong kho! Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất thêm: ${numValue - oldQuantity}`
+                            [index]: `Đang xuất thêm: ${numValue - oldQuantity} ${matchedItem.unit} > Tồn kho: ${Number(matchedItem.quantity)} ${matchedItem.unit}`
                         })
 
-                        // Hiển thị thông báo toast
-                        toast.error("Vượt quá số lượng tồn kho", {
-                            description: `Không đủ hàng trong kho! ${matchedItem.item_name}: Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất thêm: ${numValue - oldQuantity}`,
-                            className: "text-lg font-medium",
-                            descriptionClassName: "text-base"
-                        })
+                        // ✅ Bỏ toast error theo yêu cầu user
                     } else {
                         const newInventoryError = { ...inventoryError }
                         delete newInventoryError[index]
@@ -1191,15 +1223,10 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                     if (matchedItem && matchedItem.quantity < numValue) {
                         setInventoryError({
                             ...inventoryError,
-                            [index]: `Không đủ hàng trong kho! Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${numValue}`
+                            [index]: `Đang xuất: ${numValue} ${matchedItem.unit} > Tồn kho: ${Number(matchedItem.quantity)} ${matchedItem.unit}`
                         })
 
-                        // Hiển thị thông báo toast
-                        toast.error("Vượt quá số lượng tồn kho", {
-                            description: `Không đủ hàng trong kho! ${matchedItem.item_name}: Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${numValue}`,
-                            className: "text-lg font-medium",
-                            descriptionClassName: "text-base"
-                        })
+                        // ✅ Bỏ toast error theo yêu cầu user
                     } else {
                         const newInventoryError = { ...inventoryError }
                         delete newInventoryError[index]
@@ -1225,15 +1252,10 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             if (matchedItem && matchedItem.quantity < numValue) {
                 setInventoryError({
                     ...inventoryError,
-                    [index]: `Không đủ hàng trong kho! Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${numValue}`
+                    [index]: `Đang xuất: ${numValue} ${matchedItem.unit} > Tồn kho: ${Number(matchedItem.quantity)} ${matchedItem.unit}`
                 })
 
-                // Hiển thị thông báo toast
-                toast.error("Vượt quá số lượng tồn kho", {
-                    description: `Không đủ hàng trong kho! ${matchedItem.item_name}: Tồn kho hiện tại: ${Number(matchedItem.quantity)} ${matchedItem.unit}, cần xuất: ${numValue}`,
-                    className: "text-lg font-medium",
-                    descriptionClassName: "text-base"
-                })
+                // ✅ Bỏ toast error theo yêu cầu user
             } else if (matchedItem) {
                 const newInventoryError = { ...inventoryError }
                 delete newInventoryError[index]
@@ -1249,7 +1271,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         }
 
         // Không tự động tính toán - cho phép người dùng nhập thủ công
-        handleDetailFieldChange(index)
+        // Không xóa inventoryError để giữ lại thông tin vượt quá tồn kho
+        handleDetailFieldChange(index, false)
     }
 
     // Xử lý khi người dùng nhập vào ô tìm kiếm hàng hóa
@@ -1871,18 +1894,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             return;
         }
 
-        // Kiểm tra lỗi tồn kho
-        const hasInventoryError = Object.keys(inventoryError).length > 0;
-        if (hasInventoryError) {
-            // Hiển thị thông báo lỗi cụ thể về tồn kho
-            const errorMessages = Object.values(inventoryError);
-            toast.error("Vượt quá số lượng tồn kho", {
-                description: errorMessages.join('\n'),
-                className: "text-lg font-medium",
-                descriptionClassName: "text-base"
-            });
-            return;
-        }
+        // ✅ Bỏ kiểm tra lỗi tồn kho trong submit - cho phép xuất kho vượt quá tồn kho
+        // Thông tin vượt quá sẽ hiển thị dưới cột số lượng thay vì chặn submit
 
         // Kiểm tra tất cả hàng hóa phải tồn tại trong kho (bỏ qua dịch vụ lao động)
         for (let i = 0; i < data.details.length; i++) {
@@ -1928,28 +1941,12 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                         const oldQuantity = Number(originalDetail.quantity) || 0;
                         const newQuantity = Number(detail.quantity) || 0;
 
-                        // Chỉ kiểm tra nếu số lượng mới lớn hơn số lượng cũ
-                        if (newQuantity > oldQuantity && inventory && inventory.quantity < (newQuantity - oldQuantity)) {
-                            toast.error("Vượt quá số lượng tồn kho", {
-                                description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất thêm: ${newQuantity - oldQuantity}`,
-                                className: "text-lg font-medium",
-                                descriptionClassName: "text-base"
-                            });
-                            return;
-                        }
+                        // ✅ Bỏ kiểm tra vượt quá tồn kho trong submit - cho phép xuất kho vượt quá
                         continue; // Đã xử lý xong trường hợp chỉnh sửa
                     }
                 }
 
-                // Xử lý trường hợp thêm mới hoặc không tìm thấy chi tiết gốc
-                if (inventory && Number(inventory.quantity) < Number(detail.quantity)) {
-                    toast.error("Vượt quá số lượng tồn kho", {
-                        description: `Không đủ hàng trong kho! ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất: ${Number(detail.quantity)}`,
-                        className: "text-lg font-medium",
-                        descriptionClassName: "text-base"
-                    });
-                    return;
-                }
+                // ✅ Bỏ kiểm tra vượt quá tồn kho trong submit - cho phép xuất kho vượt quá
             }
         }
 
@@ -2029,18 +2026,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                             // Kiểm tra xem có phải là dịch vụ lao động không
                             const isLaborService = detail.unit && detail.unit.toLowerCase().includes('công');
 
-                            // Kiểm tra tồn kho (bỏ qua dịch vụ lao động)
-                            if (!isLaborService && detail.inventory_id) {
-                                const inventory = inventoryItems.find(item => item.id === detail.inventory_id);
-                                if (inventory && inventory.quantity < detail.quantity) {
-                                    toast.error("Vượt quá số lượng tồn kho", {
-                                        description: `Không thể lưu ${detail.item_name}: Tồn kho hiện tại: ${Number(inventory.quantity)} ${inventory.unit}, cần xuất: ${Number(detail.quantity)}`,
-                                        className: "text-lg font-medium",
-                                        descriptionClassName: "text-base"
-                                    });
-                                    continue;
-                                }
-                            }
+                            // ✅ Bỏ kiểm tra tồn kho trong submit - cho phép xuất kho vượt quá
 
                             // Chuẩn bị dữ liệu gửi đi
                             const detailData = {
@@ -2853,6 +2839,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                                         // Cập nhật giá trị vào form
                                                                                         form.setValue(`details.${actualIndex}.item_name`, value);
 
+                                                                                        // ✅ Trigger lazy loading search khi user gõ
+                                                                                        searchInventoryItems(value);
+
                                                                                         // Nếu có hàng hóa trùng tên và còn hàng, tự động gán inventory_id
                                                                                         const matchedByName = inventoryItems.find(
                                                                                             item => item.item_name.toLowerCase() === value.toLowerCase() &&
@@ -2928,39 +2917,47 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                                     }}
                                                                                 />
 
-                                                                                {/* Dropdown gợi ý hàng hóa tương tự */}
+                                                                                {/* Dropdown gợi ý hàng hóa tương tự với lazy loading */}
                                                                                 {!isViewMode &&
                                                                                     (mode !== "edit" || editingRowIndex === actualIndex) &&
                                                                                     showItemDropdown[actualIndex] &&
-                                                                                    // Chỉ hiển thị dropdown khi không có kết quả trùng khớp chính xác
-                                                                                    !inventoryItems.some(item =>
-                                                                                        item.item_name.toLowerCase() === (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase() &&
-                                                                                        item.category === 'HH' &&
-                                                                                        Number(item.quantity) > 0
-                                                                                    ) &&
-                                                                                    (() => {
-                                                                                        const searchValue = (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase();
-                                                                                        return inventoryItems.filter(item =>
+                                                                                    (form.getValues(`details.${actualIndex}.item_name`) || "").length >= 2 &&
+                                                                                    (inventoryLoading || (
+                                                                                        // Chỉ hiển thị dropdown khi không có kết quả trùng khớp chính xác
+                                                                                        !inventoryItems.some(item =>
+                                                                                            item.item_name.toLowerCase() === (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase() &&
                                                                                             item.category === 'HH' &&
-                                                                                            Number(item.quantity) > 0 &&
-                                                                                            (searchValue === "" || item.item_name.toLowerCase().includes(searchValue))
+                                                                                            Number(item.quantity) > 0
+                                                                                        ) &&
+                                                                                        (() => {
+                                                                                            const searchValue = (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase();
+                                                                                            return inventoryItems.filter(item =>
+                                                                                                item.category === 'HH' &&
+                                                                                                Number(item.quantity) > 0 &&
+                                                                                                (searchValue === "" || item.item_name.toLowerCase().includes(searchValue))
                                                                                         );
-                                                                                    })().length > 0 && (
+                                                                                    })().length > 0
+                                                                                )) && (
                                                                                     <DropdownPortal
                                                                                         targetRef={{ current: itemInputRefs.current[actualIndex] }}
                                                                                         isOpen={true}
                                                                                         onClose={closeDropdown}
                                                                                     >
-                                                                                        {(() => {
-                                                                                            const searchValue = (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase();
-                                                                                            return inventoryItems
-                                                                                                .filter(item =>
-                                                                                                    item.category === 'HH' &&
-                                                                                                    Number(item.quantity) > 0 &&
-                                                                                                    (searchValue === "" || item.item_name.toLowerCase().includes(searchValue))
-                                                                                                )
-                                                                                                .slice(0, 10) // Hiển thị tối đa 10 gợi ý
-                                                                                                .map(item => (
+                                                                                        {inventoryLoading ? (
+                                                                                            <div className="px-3 py-2 text-gray-500 text-sm">
+                                                                                                🔍 Đang tìm kiếm...
+                                                                                            </div>
+                                                                                        ) : (
+                                                                                            (() => {
+                                                                                                const searchValue = (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase();
+                                                                                                return inventoryItems
+                                                                                                    .filter(item =>
+                                                                                                        item.category === 'HH' &&
+                                                                                                        Number(item.quantity) > 0 &&
+                                                                                                        (searchValue === "" || item.item_name.toLowerCase().includes(searchValue))
+                                                                                                    )
+                                                                                                    .slice(0, 10) // Hiển thị tối đa 10 gợi ý
+                                                                                                    .map(item => (
                                                                                                 <div
                                                                                                     key={item.id}
                                                                                                     className="px-3 py-2 cursor-pointer hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
@@ -3000,7 +2997,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                                                     </div>
                                                                                                 </div>
                                                                                             ));
-                                                                                        })()}
+                                                                                            })()
+                                                                                        )}
                                                                                     </DropdownPortal>
                                                                                 )}
                                                                             </div>
@@ -3021,7 +3019,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                                         <p className="text-red-500 text-xs">{form.formState.errors.details?.[actualIndex]?.item_name?.message}</p>
                                                                     )}
                                                                     {inventoryError[actualIndex] && (
-                                                                        <p className="text-red-500 text-xs">{inventoryError[actualIndex]}</p>
+                                                                        <p className="text-orange-600 text-xs font-medium">{inventoryError[actualIndex]}</p>
                                                                     )}
                                                                 </div>
                                                             </div>
@@ -3081,7 +3079,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
 
                                                                 // Tính toán tổng tiền
                                                                 calculateDetailTotals(actualIndex);
-                                                                handleDetailFieldChange(actualIndex);
+                                                                // Không xóa inventoryError để giữ lại thông tin vượt quá tồn kho
+                                                                handleDetailFieldChange(actualIndex, false);
                                                             }}
                                                             onBlur={(e) => {
                                                                 const value = e.target.value;
@@ -3110,14 +3109,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                             const quantity = form.getValues(`details.${actualIndex}.quantity`) || 0;
                                                             const isLaborService = unit.toLowerCase().includes('công');
 
-                                                            // Chỉ hiển thị cho hàng hóa thông thường (không phải dịch vụ lao động)
-                                                            if (!isLaborService && inventoryId && quantity > 0 && estimatedInventory[inventoryId] !== undefined && estimatedInventory[inventoryId] >= 0) {
-                                                                return (
-                                                                    <div className="text-xs text-blue-600 mt-1">
-                                                                        Tồn kho sau xuất: {formatVietnameseNumber(estimatedInventory[inventoryId])} {unit}
-                                                                    </div>
-                                                                );
-                                                            }
+                                                            // ✅ LOẠI BỎ hiển thị "Tồn kho sau xuất" theo yêu cầu user
                                                             return null;
                                                         })()}
                                                     </div>
@@ -3139,7 +3131,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                             }, 3); // Cho phép 3 chữ số thập phân
 
                                                             // Không tự động tính toán - cho phép người dùng nhập thủ công
-                                                            handleDetailFieldChange(actualIndex);
+                                                            // Không xóa inventoryError để giữ lại thông tin vượt quá tồn kho
+                                                            handleDetailFieldChange(actualIndex, false);
                                                         }}
                                                         onBlur={(e) => {
                                                             const value = e.target.value;
@@ -3445,15 +3438,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                 )}
 
                 {/* Hiển thị lỗi tồn kho */}
-                {Object.keys(inventoryError).length > 0 && (
-                    <div className="mt-2 md:mt-4 space-y-1">
-                        {Object.entries(inventoryError).map(([index, error]) => (
-                            <p key={index} className="text-red-500 text-xs md:text-sm">
-                                Dòng {parseInt(index) + 1}: {error}
-                            </p>
-                        ))}
-                    </div>
-                )}
+
 
                 {/* Hiển thị lỗi tên hàng hóa */}
                 {Object.keys(itemNameError).length > 0 && (

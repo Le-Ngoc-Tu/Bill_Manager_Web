@@ -9,8 +9,9 @@ import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, D
 
 import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
 import FinancialSummaryCards from "@/components/ui/FinancialSummaryCards"
-import { FaPlus, FaFilter, FaSync } from "react-icons/fa"
+import { FaPlus, FaFilter, FaSync, FaFileUpload } from "react-icons/fa"
 import { ImportForm } from "@/components/forms/ImportForm"
+import { XMLUploadForm } from "@/components/forms/XMLUploadForm"
 import { DataTable } from "@/components/ui/data-table"
 import { getColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
@@ -56,6 +57,7 @@ export default function ImportsPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false)
+  const [isXMLUploadModalOpen, setIsXMLUploadModalOpen] = useState(false)
   const [selectedImport, setSelectedImport] = useState<ImportInvoice | null>(null)
   const [selectedImports, setSelectedImports] = useState<ImportInvoice[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -572,26 +574,37 @@ export default function ImportsPage() {
               searchPlaceholder=""
               onDeleteSelected={handleBatchDelete}
               actionButton={
-                <Button
-                  onClick={() => {
-                    setSelectedImport(null)
-                    setIsModalOpen(true)
-                  }}
-                  className="h-10 md:h-12 text-sm md:text-base"
-                  disabled={isFiltering}
-                >
-                  {isFiltering ? (
-                    <>
-                      <div className="mr-2 h-3 w-3 md:h-4 md:w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                      Đang tải...
-                    </>
-                  ) : (
-                    <>
-                      <FaPlus className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-                      Thêm hóa đơn
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => setIsXMLUploadModalOpen(true)}
+                    variant="outline"
+                    className="h-10 md:h-12 text-sm md:text-base border-green-600 text-green-600 hover:bg-green-50"
+                    disabled={isFiltering}
+                  >
+                    <FaFileUpload className="mr-1 h-3 w-3 md:h-4 md:w-4" />
+                    Upload XML
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setSelectedImport(null)
+                      setIsModalOpen(true)
+                    }}
+                    className="h-10 md:h-12 text-sm md:text-base"
+                    disabled={isFiltering}
+                  >
+                    {isFiltering ? (
+                      <>
+                        <div className="mr-2 h-3 w-3 md:h-4 md:w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                        Đang tải...
+                      </>
+                    ) : (
+                      <>
+                        <FaPlus className="mr-1 h-3 w-3 md:h-4 md:w-4" />
+                        Thêm hóa đơn
+                      </>
+                    )}
+                  </Button>
+                </div>
               }
             />
 
@@ -986,6 +999,25 @@ export default function ImportsPage() {
                   )}
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* Modal XML Upload */}
+          <Dialog open={isXMLUploadModalOpen} onOpenChange={setIsXMLUploadModalOpen}>
+            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[90vw] xl:max-w-[1200px] w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold">Upload File XML Hóa Đơn</DialogTitle>
+              </DialogHeader>
+              <div className="mt-4">
+                <XMLUploadForm
+                  onSuccess={() => {
+                    setIsXMLUploadModalOpen(false)
+                    fetchData() // Refresh data after successful upload
+                    toast.success('Upload XML thành công!')
+                  }}
+                  onCancel={() => setIsXMLUploadModalOpen(false)}
+                />
+              </div>
             </DialogContent>
           </Dialog>
 

@@ -23,13 +23,14 @@ export interface InventoryFormData {
 }
 
 // Lấy danh sách hàng hóa trong kho
-export const getInventoryItems = async (forCombobox = false, category = "", includeLatestImportPrice = false) => {
+export const getInventoryItems = async (forCombobox = false, category = "", includeLatestImportPrice = false, search = "") => {
   try {
     const response = await apiClient.get(`/inventory`, {
       params: {
         forCombobox: forCombobox,
         category: category, // Thêm tham số category để lọc theo loại
-        includeLatestImportPrice: includeLatestImportPrice // Thêm tham số để lấy giá nhập gần nhất
+        includeLatestImportPrice: includeLatestImportPrice, // Thêm tham số để lấy giá nhập gần nhất
+        search: search // Thêm tham số search để tìm kiếm hàng hóa
       }
     });
 

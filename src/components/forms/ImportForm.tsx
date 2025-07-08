@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect, useRef } from "react"
+import { useState, useEffect, useRef, useCallback } from "react"
 import { useForm, Controller, useFieldArray } from "react-hook-form"
 import { zodResolver } from "@hookform/resolvers/zod"
 import * as z from "zod"
@@ -124,6 +124,25 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   const [inventoryItems, setInventoryItems] = useState<Inventory[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
+  const [inventoryLoading, setInventoryLoading] = useState(false)
+  const [inventorySearchCache, setInventorySearchCache] = useState<{[key: string]: Inventory[]}>({})
+
+  // Debounce hook
+  const useDebounce = (value: string, delay: number) => {
+    const [debouncedValue, setDebouncedValue] = useState(value)
+
+    useEffect(() => {
+      const handler = setTimeout(() => {
+        setDebouncedValue(value)
+      }, delay)
+
+      return () => {
+        clearTimeout(handler)
+      }
+    }, [value, delay])
+
+    return debouncedValue
+  }
   const [isSubmitted, setIsSubmitted] = useState(false)
 
   // State cho modal thêm mới
@@ -618,7 +637,40 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
   // Đã loại bỏ useEffect auto-calculation để tránh tự động cập nhật invoice totals
   // Chỉ tính toán khi người dùng nhấn "Tính toán lại tất cả" hoặc OCR extract
 
-  // Fetch suppliers, customers và inventory items từ API
+  // Search inventory items với debounce và cache
+  const searchInventoryItems = useCallback(async (searchTerm: string) => {
+    if (!searchTerm || searchTerm.length < 2) {
+      setInventoryItems([])
+      return
+    }
+
+    // Kiểm tra cache trước
+    if (inventorySearchCache[searchTerm]) {
+      setInventoryItems(inventorySearchCache[searchTerm])
+      return
+    }
+
+    setInventoryLoading(true)
+    try {
+      const inventoryResult = await getInventoryItems(true, "", false, searchTerm)
+      if (inventoryResult && inventoryResult.success) {
+        const items = inventoryResult.data || []
+        setInventoryItems(items)
+
+        // Cache kết quả
+        setInventorySearchCache(prev => ({
+          ...prev,
+          [searchTerm]: items
+        }))
+      }
+    } catch (err) {
+      console.error("Error searching inventory:", err)
+    } finally {
+      setInventoryLoading(false)
+    }
+  }, [inventorySearchCache])
+
+  // Fetch chỉ suppliers và customers từ API (bỏ inventory items)
   useEffect(() => {
     const fetchData = async () => {
       setLoading(true)
@@ -638,12 +690,7 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           setCustomers(customersData)
         }
 
-        // Fetch inventory items sử dụng API đã tách
-        // Chỉ lấy hàng hóa loại HH cho combobox
-        const inventoryResult = await getInventoryItems(true)
-        if (inventoryResult && inventoryResult.success) {
-          setInventoryItems(inventoryResult.data || [])
-        }
+        // ✅ LOẠI BỎ fetch inventory items - sẽ lazy load khi cần
       } catch (err) {
         console.error("Error fetching data:", err)
         setError("Đã xảy ra lỗi khi tải dữ liệu")
@@ -2683,6 +2730,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                           // Cập nhật giá trị vào form
                                           form.setValue(`details.${actualIndex}.item_name`, value);
 
+                                          // ✅ Trigger lazy loading search khi user gõ
+                                          searchInventoryItems(value);
+
                                           // Nếu có hàng hóa trùng tên, tự động gán inventory_id
                                           const matchedByName = inventoryItems.find(
                                             item => item.item_name.toLowerCase() === value.toLowerCase()
@@ -2730,32 +2780,40 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                         }}
                                       />
 
-                                      {/* Dropdown gợi ý hàng hóa tương tự */}
+                                      {/* Dropdown gợi ý hàng hóa tương tự với lazy loading */}
                                       {form.getValues(`details.${actualIndex}.item_name`) &&
                                         !isViewMode &&
                                         (mode !== "edit" || editingRowIndex === actualIndex) &&
-                                        // Chỉ hiển thị dropdown khi không có kết quả trùng khớp chính xác
-                                        !inventoryItems.some(item =>
-                                          item.item_name.toLowerCase() === (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
-                                        ) &&
-                                        inventoryItems.filter(item =>
-                                          item.item_name.toLowerCase().includes(
-                                            (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
-                                          )
-                                        ).length > 0 && (
+                                        (form.getValues(`details.${actualIndex}.item_name`) || "").length >= 2 &&
+                                        (inventoryLoading || (
+                                          // Chỉ hiển thị dropdown khi không có kết quả trùng khớp chính xác
+                                          !inventoryItems.some(item =>
+                                            item.item_name.toLowerCase() === (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                          ) &&
+                                          inventoryItems.filter(item =>
+                                            item.item_name.toLowerCase().includes(
+                                              (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                            )
+                                          ).length > 0
+                                        )) && (
                                         <DropdownPortal
                                           targetRef={{ current: inputRefs.current[actualIndex] }}
                                           isOpen={true}
                                           onClose={closeDropdown}
                                         >
-                                          {inventoryItems
-                                            .filter(item =>
-                                              item.item_name.toLowerCase().includes(
-                                                (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                          {inventoryLoading ? (
+                                            <div className="px-3 py-2 text-gray-500 text-sm">
+                                              🔍 Đang tìm kiếm...
+                                            </div>
+                                          ) : (
+                                            inventoryItems
+                                              .filter(item =>
+                                                item.item_name.toLowerCase().includes(
+                                                  (form.getValues(`details.${actualIndex}.item_name`) || "").toLowerCase()
+                                                )
                                               )
-                                            )
-                                            .slice(0, 10) // Hiển thị tối đa 10 gợi ý
-                                            .map(item => (
+                                              .slice(0, 10) // Hiển thị tối đa 10 gợi ý
+                                              .map(item => (
                                               <div
                                                 key={item.id}
                                                 className="px-3 py-2 cursor-pointer hover:bg-gray-100 border-b border-gray-100 last:border-b-0"
@@ -2792,7 +2850,8 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
                                                   {item.category === 'HH' ? 'Hàng hóa' : 'Chi phí'} | Đơn vị: {item.unit}
                                                 </div>
                                               </div>
-                                            ))}
+                                            ))
+                                          )}
                                         </DropdownPortal>
                                       )}
                                     </div>
