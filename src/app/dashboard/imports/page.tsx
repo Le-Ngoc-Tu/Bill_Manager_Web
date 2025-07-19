@@ -365,8 +365,8 @@ export default function ImportsPage() {
     }
 
     const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-    // Loại bỏ /api từ backendUrl và thêm trực tiếp path
-    const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+    // Giữ nguyên /api trong backendUrl vì backend serve static files qua /api/uploads
+    const baseUrl = backendUrl || 'http://localhost:7010/api'
     const pdfUrl = `${baseUrl}/${invoice.pdf_url}`
 
     // Mở PDF trong PDFViewer component
@@ -384,8 +384,8 @@ export default function ImportsPage() {
 
     try {
       const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
-      // Loại bỏ /api từ backendUrl và thêm trực tiếp path
-      const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+      // Giữ nguyên /api trong backendUrl vì backend serve static files qua /api/uploads
+      const baseUrl = backendUrl || 'http://localhost:7010/api'
       const xmlUrl = `${baseUrl}/${invoice.xml_url}`
 
       // Fetch file và tạo blob để force download
