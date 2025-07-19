@@ -62,10 +62,16 @@ export class N8nNetworkError extends Error {
   }
 }
 
+// Debug environment variables
+console.log('🔧 DEBUG Environment Variables:');
+console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL);
+console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL2:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL2);
+console.log('All NEXT_PUBLIC env vars:', Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC_')));
+
 // Configuration for multiple webhooks
 const N8N_WEBHOOK_CONFIGS = {
   nang_vang: {
-    url: process.env.N8N_WEBHOOK_URL || 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd6',
+    url: process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL || 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd6',
     name: 'Công ty Nắng Vàng',
     timeout: 60000,
     headers: {
@@ -73,7 +79,7 @@ const N8N_WEBHOOK_CONFIGS = {
     }
   },
   nguyen_luan: {
-    url: process.env.N8N_WEBHOOK_URL2 || 'https://job.nguyenluanbinhthuan.com:8443/webhook/819d0a94-9a42-4cbf-9291-59f27e7620f3',
+    url: process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL2 || 'https://job.nguyenluanbinhthuan.com:8443/webhook/819d0a94-9a42-4cbf-9291-59f27e7620f3',
     name: 'Công ty Nguyên Luân',
     timeout: 60000,
     headers: {
@@ -81,6 +87,11 @@ const N8N_WEBHOOK_CONFIGS = {
     }
   }
 };
+
+// Debug final config
+console.log('🔧 DEBUG Final webhook configs:');
+console.log('Nắng Vàng URL:', N8N_WEBHOOK_CONFIGS.nang_vang.url);
+console.log('Nguyên Luân URL:', N8N_WEBHOOK_CONFIGS.nguyen_luan.url);
 
 /**
  * Call n8n webhook to synchronize invoices for a date range
