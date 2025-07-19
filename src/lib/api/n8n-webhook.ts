@@ -63,10 +63,10 @@ export class N8nNetworkError extends Error {
 }
 
 // Debug environment variables
-console.log('🔧 DEBUG Environment Variables:');
-console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL);
-console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL2:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL2);
-console.log('All NEXT_PUBLIC env vars:', Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC_')));
+// console.log('🔧 DEBUG Environment Variables:');
+// console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL);
+// console.log('NEXT_PUBLIC_N8N_WEBHOOK_URL2:', process.env.NEXT_PUBLIC_N8N_WEBHOOK_URL2);
+// console.log('All NEXT_PUBLIC env vars:', Object.keys(process.env).filter(key => key.startsWith('NEXT_PUBLIC_')));
 
 // Configuration for multiple webhooks
 const N8N_WEBHOOK_CONFIGS = {
@@ -89,9 +89,9 @@ const N8N_WEBHOOK_CONFIGS = {
 };
 
 // Debug final config
-console.log('🔧 DEBUG Final webhook configs:');
-console.log('Nắng Vàng URL:', N8N_WEBHOOK_CONFIGS.nang_vang.url);
-console.log('Nguyên Luân URL:', N8N_WEBHOOK_CONFIGS.nguyen_luan.url);
+// console.log('🔧 DEBUG Final webhook configs:');
+// console.log('Nắng Vàng URL:', N8N_WEBHOOK_CONFIGS.nang_vang.url);
+// console.log('Nguyên Luân URL:', N8N_WEBHOOK_CONFIGS.nguyen_luan.url);
 
 /**
  * Call n8n webhook to synchronize invoices for a date range
