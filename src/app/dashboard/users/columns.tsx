@@ -50,16 +50,6 @@ export function getColumns({ onView, onEdit, onDelete, onResetPassword, onDelete
       },
     },
     {
-      accessorKey: "index",
-      header: "STT",
-      cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-      enableSorting: false,
-      enableHiding: false,
-      meta: {
-        columnName: "STT"
-      },
-    },
-    {
       accessorKey: "username",
       header: ({ column }) => {
         return (

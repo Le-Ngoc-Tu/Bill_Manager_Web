@@ -48,16 +48,6 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
     },
     {
-      accessorKey: "index",
-      header: "STT",
-      cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-      enableSorting: false,
-      enableHiding: false,
-      meta: {
-        columnName: "STT"
-      },
-    },
-    {
       accessorKey: "name",
       header: ({ column }) => {
         return (
@@ -67,16 +57,17 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
               onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
               className="w-full hover:bg-red-800 hover:text-white"
             >
-              Tên người mua
+              Tên đối tác
               <ArrowUpDown className="ml-2 h-4 w-4" />
             </Button>
           </div>
         )
       },
-      cell: ({ row }) => <div>{row.getValue("name")}</div>,
+      cell: ({ row }) => <div className="text-left">{row.getValue("name")}</div>,
       meta: {
-        columnName: "Tên người mua"
+        columnName: "Tên đối tác"
       },
+      size: 300, // Tăng width cho cột tên đối tác
     },
     {
       accessorKey: "tax_code",
@@ -115,10 +106,20 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
           </div>
         )
       },
-      cell: ({ row }) => <div>{row.getValue("address") || "-"}</div>,
+      cell: ({ row }) => {
+        const address = row.getValue("address") as string;
+        return (
+          <div className="text-left max-w-[150px] truncate" title={address || ""}>
+            {address || "-"}
+          </div>
+        );
+      },
       meta: {
         columnName: "Địa chỉ"
       },
+      size: 150, // Giảm width cho cột địa chỉ
+      enableHiding: true,
+      defaultHidden: true, // Ẩn cột này mặc định
     },
     {
       accessorKey: "phone",

@@ -6,6 +6,7 @@ import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 
 import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
 import FinancialSummaryCards from "@/components/ui/FinancialSummaryCards"
@@ -13,6 +14,8 @@ import { FaPlus, FaFilter, FaSync, FaFileUpload } from "react-icons/fa"
 import { ImportForm } from "@/components/forms/ImportForm"
 import { XMLUploadForm } from "@/components/forms/XMLUploadForm"
 import { DataTable } from "@/components/ui/data-table"
+import { PDFViewer } from "@/components/ui/PDFViewer"
+import { AttachmentUploadModal } from "@/components/ui/AttachmentUploadModal"
 import { getColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -26,7 +29,8 @@ import { getImports, getImportById, createImport, updateImport, deleteImport, Im
 import {
   syncInvoicesFromN8n,
   N8nWebhookError,
-  N8nNetworkError
+  N8nNetworkError,
+  getAvailableCompanies
 } from "@/lib/api/n8n-webhook"
 
 // These interfaces will be used in the future implementation of the add/edit form
@@ -58,6 +62,19 @@ export default function ImportsPage() {
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false)
   const [isXMLUploadModalOpen, setIsXMLUploadModalOpen] = useState(false)
+
+  // PDF Viewer state
+  const [isPDFViewerOpen, setIsPDFViewerOpen] = useState(false)
+  const [currentPDFUrl, setCurrentPDFUrl] = useState<string>("")
+  const [currentPDFTitle, setCurrentPDFTitle] = useState<string>("")
+
+  // Attachment Upload Modal state
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [uploadModalConfig, setUploadModalConfig] = useState<{
+    recordId: number
+    fileType: 'pdf' | 'xml'
+    currentFileName?: string
+  } | null>(null)
   const [selectedImport, setSelectedImport] = useState<ImportInvoice | null>(null)
   const [selectedImports, setSelectedImports] = useState<ImportInvoice[]>([])
   const [error, setError] = useState<string | null>(null)
@@ -71,6 +88,8 @@ export default function ImportsPage() {
   const [allImports, setAllImports] = useState<ImportInvoice[]>([])
   const [filteredImports, setFilteredImports] = useState<ImportInvoice[]>([])
   const [searchTerm, setSearchTerm] = useState("")
+  const [selectedSupplierId, setSelectedSupplierId] = useState<string>("all")
+  const [selectedCompany, setSelectedCompany] = useState<'nang_vang' | 'nguyen_luan'>('nang_vang')
 
   // State cho financial summary
   const [financialSummary, setFinancialSummary] = useState({
@@ -113,6 +132,23 @@ export default function ImportsPage() {
     }
   }
 
+  // Lấy danh sách suppliers unique từ allImports
+  const getUniqueSuppliers = () => {
+    const suppliersMap = new Map()
+
+    allImports.forEach(invoice => {
+      if (invoice.supplier && invoice.supplier_id) {
+        suppliersMap.set(invoice.supplier_id, {
+          id: invoice.supplier_id,
+          name: invoice.supplier.name,
+          tax_code: invoice.supplier.tax_code
+        })
+      }
+    })
+
+    return Array.from(suppliersMap.values()).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
   // Frontend filtering function
   const applyFilters = () => {
     let filtered = [...allImports]
@@ -137,14 +173,24 @@ export default function ImportsPage() {
       })
     }
 
-    // Lọc theo tìm kiếm (số hóa đơn + tên người bán)
+    // Lọc theo supplier (công ty chính/người mua)
+    if (selectedSupplierId !== "all") {
+      filtered = filtered.filter(invoice => {
+        return invoice.supplier_id?.toString() === selectedSupplierId
+      })
+    }
+
+    // Lọc theo tìm kiếm (số hóa đơn + tên người bán + tên người mua)
     if (searchTerm.trim()) {
       const searchLower = searchTerm.toLowerCase().trim()
       filtered = filtered.filter(invoice => {
         const invoiceNumber = invoice.invoice_number?.toLowerCase() || ''
-        const supplierName = invoice.supplier?.name?.toLowerCase() || ''
+        const supplierName = invoice.supplier?.name?.toLowerCase() || '' // Người mua (công ty chính)
+        const customerName = invoice.customer?.name?.toLowerCase() || '' // Người bán (đối tác)
 
-        return invoiceNumber.includes(searchLower) || supplierName.includes(searchLower)
+        return invoiceNumber.includes(searchLower) ||
+               supplierName.includes(searchLower) ||
+               customerName.includes(searchLower)
       })
     }
 
@@ -169,7 +215,7 @@ export default function ImportsPage() {
   useEffect(() => {
     applyFilters()
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [allImports, startDate, endDate, searchTerm])
+  }, [allImports, startDate, endDate, searchTerm, selectedSupplierId])
 
   // Xử lý xóa hóa đơn
   const [isDeleting, setIsDeleting] = useState(false)
@@ -311,6 +357,92 @@ export default function ImportsPage() {
     }
   }
 
+  // Xử lý xem PDF
+  const handleViewPdf = (invoice: ImportInvoice) => {
+    if (!invoice.pdf_url) {
+      toast.error("Không tìm thấy file PDF")
+      return
+    }
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+    // Loại bỏ /api từ backendUrl và thêm trực tiếp path
+    const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+    const pdfUrl = `${baseUrl}/${invoice.pdf_url}`
+
+    // Mở PDF trong PDFViewer component
+    setCurrentPDFUrl(pdfUrl)
+    setCurrentPDFTitle(`Hóa đơn ${invoice.invoice_number}`)
+    setIsPDFViewerOpen(true)
+  }
+
+  // Xử lý tải XML
+  const handleDownloadXml = async (invoice: ImportInvoice) => {
+    if (!invoice.xml_url) {
+      toast.error("Không tìm thấy file XML")
+      return
+    }
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+      // Loại bỏ /api từ backendUrl và thêm trực tiếp path
+      const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+      const xmlUrl = `${baseUrl}/${invoice.xml_url}`
+
+      // Fetch file và tạo blob để force download
+      const response = await fetch(xmlUrl)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+
+      // Tạo anchor element để download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `invoice_${invoice.invoice_number}.xml`
+      document.body.appendChild(link)
+      link.click()
+
+      // Cleanup
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast.success("Tải file XML thành công!")
+    } catch (error) {
+      console.error("Error downloading XML:", error)
+      toast.error("Lỗi khi tải file XML")
+    }
+  }
+
+  // Xử lý upload PDF
+  const handleUploadPdf = (invoice: ImportInvoice) => {
+    setUploadModalConfig({
+      recordId: invoice.id,
+      fileType: 'pdf',
+      currentFileName: invoice.pdf_url ? `Hóa đơn ${invoice.invoice_number}.pdf` : undefined
+    })
+    setIsUploadModalOpen(true)
+  }
+
+  // Xử lý upload XML
+  const handleUploadXml = (invoice: ImportInvoice) => {
+    setUploadModalConfig({
+      recordId: invoice.id,
+      fileType: 'xml',
+      currentFileName: invoice.xml_url ? `Hóa đơn ${invoice.invoice_number}.xml` : undefined
+    })
+    setIsUploadModalOpen(true)
+  }
+
+  // Xử lý thành công upload
+  const handleUploadSuccess = () => {
+    // Refresh data để cập nhật UI
+    fetchData()
+    setIsUploadModalOpen(false)
+    setUploadModalConfig(null)
+  }
+
   // Xử lý sync hóa đơn từ n8n
   const handleSyncFromN8n = async () => {
     if (!syncStartDate || !syncEndDate) {
@@ -349,18 +481,21 @@ export default function ImportsPage() {
 
       console.log(`Syncing invoices from ${startDateStr} to ${endDateStr}`)
 
+      // Get company name for display
+      const companyName = getAvailableCompanies().find(c => c.value === selectedCompany)?.label || selectedCompany
+
       // Show initial progress toast with timeout warning
-      toast.info(`Bắt đầu đồng bộ hóa đơn từ ${startDateStr} đến ${endDateStr}...`, {
+      toast.info(`Bắt đầu đồng bộ hóa đơn ${companyName} từ ${startDateStr} đến ${endDateStr}...`, {
         description: "Quá trình có thể mất vài phút đối với khoảng thời gian lớn. Vui lòng đợi...",
         className: "text-lg font-medium",
         descriptionClassName: "text-base",
         duration: 5000
       })
 
-      await syncInvoicesFromN8n(startDateStr, endDateStr)
+      await syncInvoicesFromN8n(startDateStr, endDateStr, selectedCompany)
 
       // Đơn giản hóa: nếu 200 OK thì refresh page và đóng modal
-      toast.success("Đồng bộ hóa đơn thành công!", {
+      toast.success(`Đồng bộ hóa đơn ${companyName} thành công!`, {
         className: "text-lg font-medium",
         descriptionClassName: "text-base",
         duration: 3000
@@ -488,6 +623,25 @@ export default function ImportsPage() {
                 />
               </div>
 
+              <div className="flex-1 max-w-xs">
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Công ty chính
+                </label>
+                <Select value={selectedSupplierId} onValueChange={setSelectedSupplierId}>
+                  <SelectTrigger className="w-full h-10">
+                    <SelectValue placeholder="Chọn công ty chính" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Tất cả công ty</SelectItem>
+                    {getUniqueSuppliers().map((supplier) => (
+                      <SelectItem key={supplier.id} value={supplier.id.toString()}>
+                        {supplier.name} {supplier.tax_code ? `(${supplier.tax_code})` : ''}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+
               <div className="flex-1 max-w-md">
                 <label className="block text-sm font-medium text-gray-700 mb-2">
                   Tìm kiếm
@@ -496,7 +650,7 @@ export default function ImportsPage() {
                   type="text"
                   value={searchTerm}
                   onChange={(e) => setSearchTerm(e.target.value)}
-                  placeholder="Tìm theo số hóa đơn hoặc tên người bán..."
+                  placeholder="Tìm theo số hóa đơn, tên người bán hoặc tên công ty..."
                   className="w-full h-10 px-3 py-2 border border-gray-300 rounded-md shadow-sm focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                 />
               </div>
@@ -509,6 +663,7 @@ export default function ImportsPage() {
                   setStartDate(undefined)
                   setEndDate(undefined)
                   setSearchTerm("")
+                  setSelectedSupplierId("all")
                 }}
                 className="h-10"
               >
@@ -567,6 +722,10 @@ export default function ImportsPage() {
                     setIsDeleteModalOpen(true);
                   }
                 },
+                onViewPdf: handleViewPdf,
+                onDownloadXml: handleDownloadXml,
+                onUploadPdf: handleUploadPdf,
+                onUploadXml: handleUploadXml,
                 onDeleteMany: handleBatchDelete
               })}
               data={filteredImports}
@@ -582,7 +741,7 @@ export default function ImportsPage() {
                     disabled={isFiltering}
                   >
                     <FaFileUpload className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-                    Upload XML
+                    Tải Hóa Đơn
                   </Button>
                   <Button
                     onClick={() => {
@@ -707,32 +866,9 @@ export default function ImportsPage() {
                   {/* Thông tin người bán và người mua - hiển thị theo chiều ngang */}
                   {(selectedImport.supplier || selectedImport.customer) && (
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 md:gap-6">
-                      {selectedImport.supplier && (
+                      {selectedImport.customer && (
                         <div className="bg-gray-50 p-4 rounded-sm">
                           <h4 className="text-sm md:text-base font-bold text-gray-700 mb-2">Thông tin người bán</h4>
-                          <div className="space-y-1">
-                            <div className="flex items-center">
-                              <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Tên:</p>
-                              <p className="text-sm md:text-base">{selectedImport.supplier.name}</p>
-                            </div>
-                            {selectedImport.supplier.tax_code && (
-                              <div className="flex items-center">
-                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">MST:</p>
-                                <p className="text-sm md:text-base">{selectedImport.supplier.tax_code}</p>
-                              </div>
-                            )}
-                            {selectedImport.supplier.address && (
-                              <div className="flex items-start">
-                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Địa chỉ:</p>
-                                <p className="text-sm md:text-base">{selectedImport.supplier.address}</p>
-                              </div>
-                            )}
-                          </div>
-                        </div>
-                      )}
-                      {selectedImport.customer && (
-                        <div className="bg-blue-50 p-4 rounded-sm">
-                          <h4 className="text-sm md:text-base font-bold text-gray-700 mb-2">Thông tin người mua</h4>
                           <div className="space-y-1">
                             <div className="flex items-center">
                               <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Tên:</p>
@@ -748,6 +884,29 @@ export default function ImportsPage() {
                               <div className="flex items-start">
                                 <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Địa chỉ:</p>
                                 <p className="text-sm md:text-base">{selectedImport.customer.address}</p>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      )}
+                      {selectedImport.supplier && (
+                        <div className="bg-blue-50 p-4 rounded-sm">
+                          <h4 className="text-sm md:text-base font-bold text-gray-700 mb-2">Thông tin người mua</h4>
+                          <div className="space-y-1">
+                            <div className="flex items-center">
+                              <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Tên:</p>
+                              <p className="text-sm md:text-base">{selectedImport.supplier.name}</p>
+                            </div>
+                            {selectedImport.supplier.tax_code && (
+                              <div className="flex items-center">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">MST:</p>
+                                <p className="text-sm md:text-base">{selectedImport.supplier.tax_code}</p>
+                              </div>
+                            )}
+                            {selectedImport.supplier.address && (
+                              <div className="flex items-start">
+                                <p className="text-sm md:text-base font-medium mr-2 min-w-[80px]">Địa chỉ:</p>
+                                <p className="text-sm md:text-base">{selectedImport.supplier.address}</p>
                               </div>
                             )}
                           </div>
@@ -962,8 +1121,24 @@ export default function ImportsPage() {
                   </div>
                 </div>
 
-
-
+                {/* Company Selection */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Chọn công ty
+                  </label>
+                  <Select value={selectedCompany} onValueChange={(value) => setSelectedCompany(value as 'nang_vang' | 'nguyen_luan')}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Chọn công ty" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getAvailableCompanies().map((company) => (
+                        <SelectItem key={company.value} value={company.value}>
+                          {company.label}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
 
               </div>
 
@@ -1002,24 +1177,48 @@ export default function ImportsPage() {
             </DialogContent>
           </Dialog>
 
-          {/* Modal XML Upload */}
+          {/* Modal Tải Hóa Đơn */}
           <Dialog open={isXMLUploadModalOpen} onOpenChange={setIsXMLUploadModalOpen}>
             <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[90vw] xl:max-w-[1200px] w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
               <DialogHeader>
-                <DialogTitle className="text-xl font-semibold">Upload File XML Hóa Đơn</DialogTitle>
+                <DialogTitle className="text-xl font-semibold">Tải Hóa Đơn</DialogTitle>
               </DialogHeader>
               <div className="mt-4">
                 <XMLUploadForm
                   onSuccess={() => {
                     setIsXMLUploadModalOpen(false)
                     fetchData() // Refresh data after successful upload
-                    toast.success('Upload XML thành công!')
+                    toast.success('Tải hóa đơn thành công!')
                   }}
                   onCancel={() => setIsXMLUploadModalOpen(false)}
                 />
               </div>
             </DialogContent>
           </Dialog>
+
+          {/* PDF Viewer Modal */}
+          <PDFViewer
+            isOpen={isPDFViewerOpen}
+            onClose={() => setIsPDFViewerOpen(false)}
+            pdfUrl={currentPDFUrl}
+            title={currentPDFTitle}
+          />
+
+          {/* Modal Upload Attachment */}
+          {uploadModalConfig && (
+            <AttachmentUploadModal
+              isOpen={isUploadModalOpen}
+              onClose={() => {
+                setIsUploadModalOpen(false)
+                setUploadModalConfig(null)
+              }}
+              onSuccess={handleUploadSuccess}
+              recordId={uploadModalConfig.recordId}
+              recordType="import"
+              fileType={uploadModalConfig.fileType}
+              currentFileName={uploadModalConfig.currentFileName}
+            />
+          )}
 
     </div>
   )

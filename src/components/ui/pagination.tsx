@@ -7,6 +7,7 @@ import {
 
 import { cn } from "@/lib/utils"
 import { Button, buttonVariants } from "@/components/ui/button"
+import { Input } from "@/components/ui/input"
 
 function Pagination({ className, ...props }: React.ComponentProps<"nav">) {
   return (
@@ -116,6 +117,49 @@ function PaginationEllipsis({
   )
 }
 
+type PaginationGoToProps = {
+  currentPage: number
+  totalPages: number
+  onPageChange: (page: number) => void
+  className?: string
+}
+
+function PaginationGoTo({
+  currentPage,
+  totalPages,
+  onPageChange,
+  className
+}: PaginationGoToProps) {
+  const [inputValue, setInputValue] = React.useState("")
+
+  const handleSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const pageNumber = parseInt(inputValue)
+    if (pageNumber >= 1 && pageNumber <= totalPages) {
+      onPageChange(pageNumber)
+      setInputValue("")
+    }
+  }
+
+  return (
+    <form onSubmit={handleSubmit} className={cn("flex items-center gap-2", className)}>
+      <span className="text-sm text-gray-600">Đến trang:</span>
+      <Input
+        type="number"
+        min={1}
+        max={totalPages}
+        value={inputValue}
+        onChange={(e) => setInputValue(e.target.value)}
+        placeholder={currentPage.toString()}
+        className="w-16 h-8 text-center"
+      />
+      <Button type="submit" size="sm" variant="outline" className="h-8 px-2">
+        Đi
+      </Button>
+    </form>
+  )
+}
+
 export {
   Pagination,
   PaginationContent,
@@ -124,4 +168,5 @@ export {
   PaginationPrevious,
   PaginationNext,
   PaginationEllipsis,
+  PaginationGoTo,
 }

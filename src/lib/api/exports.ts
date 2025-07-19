@@ -34,6 +34,9 @@ export interface ExportInvoice {
   createdAt: string;
   updatedAt: string;
   details: ExportDetail[];
+  // File URLs for PDF and XML
+  pdf_url?: string;
+  xml_url?: string;
   // Added supplier/customer info at invoice level
   supplier_id?: number | null;
   customer_id?: number | null;
@@ -244,3 +247,89 @@ export const deleteExportDetail = async (exportId: number, detailId: number) => 
 
 // Các function tính toán đã được chuyển hoàn toàn sang frontend components
 // Backend chỉ nhận dữ liệu đã tính toán từ frontend
+
+// XML Preview Data interface
+export interface XMLPreviewData {
+  type: string
+  xmlFileName: string
+  xmlFilePath: string
+  tempFilePath: string
+  invoiceNumber: string
+  supplierInfo: any
+  customerInfo: any
+  items: any[]
+  totals: any
+  generalInfo: any
+  rawXmlData: any
+}
+
+// Upload XML for preview
+export const uploadExportXMLPreview = async (formData: FormData) => {
+  try {
+    const response = await apiClient.post('/exports/xml/upload-preview', formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error uploading export XML:', error)
+    throw error
+  }
+}
+
+// Save preview data to database
+export const saveExportXMLPreview = async (tempFileId: string, previewData: XMLPreviewData, invoiceType: string = 'auto') => {
+  try {
+    const response = await apiClient.post('/exports/xml/save-from-preview', {
+      tempFileId,
+      previewData,
+      confirmed: true,
+      invoice_type: invoiceType
+    })
+    return response.data
+  } catch (error) {
+    console.error('Error saving export XML preview:', error)
+    throw error
+  }
+}
+
+// Get available inventory items for export (only goods with stock)
+export const getAvailableInventoryForExport = async () => {
+  try {
+    const response = await apiClient.get('/exports/available-inventory')
+    return response.data
+  } catch (error) {
+    console.error('Error fetching available inventory:', error)
+    throw error
+  }
+}
+
+// Validate stock before export
+export const validateExportStock = async (items: { item_name: string, quantity: number, category: string }[]) => {
+  try {
+    const response = await apiClient.post('/exports/validate-stock', { items })
+    return response.data
+  } catch (error) {
+    console.error('Error validating export stock:', error)
+    throw error
+  }
+}
+
+// Upload bổ sung PDF/XML cho hóa đơn xuất
+export const uploadExportAttachment = async (exportId: number, file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await apiClient.post(`/exports/${exportId}/upload-attachment`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading export attachment:', error);
+    throw error;
+  }
+}

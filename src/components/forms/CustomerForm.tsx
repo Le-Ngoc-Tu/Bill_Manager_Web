@@ -14,7 +14,7 @@ import { toast } from "sonner"
 
 // Định nghĩa Zod schema để validation
 const customerFormSchema = z.object({
-  name: z.string().min(1, "Tên người mua là bắt buộc"),
+  name: z.string().min(1, "Tên đối tác là bắt buộc"),
   tax_code: z.string().optional(),
   address: z.string().optional(),
   phone: z.string().optional(),
@@ -170,7 +170,7 @@ export function CustomerForm({ mode, initialData, onSubmit, onCancel, stickyFoot
       
       <div className="space-y-4 md:space-y-6">
         <div>
-          <Label htmlFor="name" className="text-base font-medium mb-1.5 block">Tên người mua *</Label>
+          <Label htmlFor="name" className="text-base font-medium mb-1.5 block">Tên đối tác *</Label>
           <Input
             id="name"
             {...form.register("name")}

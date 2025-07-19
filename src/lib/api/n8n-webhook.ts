@@ -62,12 +62,23 @@ export class N8nNetworkError extends Error {
   }
 }
 
-// Configuration
-const N8N_WEBHOOK_CONFIG = {
-  url: process.env.N8N_WEBHOOK_URL || 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd5',
-  timeout: 60000, // 60 seconds timeout
-  headers: {
-    'Content-Type': 'application/json',
+// Configuration for multiple webhooks
+const N8N_WEBHOOK_CONFIGS = {
+  nang_vang: {
+    url: process.env.N8N_WEBHOOK_URL || 'https://job.nguyenluanbinhthuan.com:8443/webhook/14e8585b-0c07-4b19-b906-005fb97d0bd6',
+    name: 'Công ty Nắng Vàng',
+    timeout: 60000,
+    headers: {
+      'Content-Type': 'application/json',
+    }
+  },
+  nguyen_luan: {
+    url: process.env.N8N_WEBHOOK_URL2 || 'https://job.nguyenluanbinhthuan.com:8443/webhook/819d0a94-9a42-4cbf-9291-59f27e7620f3',
+    name: 'Công ty Nguyên Luân',
+    timeout: 60000,
+    headers: {
+      'Content-Type': 'application/json',
+    }
   }
 };
 
@@ -75,11 +86,13 @@ const N8N_WEBHOOK_CONFIG = {
  * Call n8n webhook to synchronize invoices for a date range
  * @param startDate - Start date in YYYY-MM-DD format
  * @param endDate - End date in YYYY-MM-DD format
+ * @param company - Company to sync: 'nang_vang' or 'nguyen_luan'
  * @returns Promise<N8nWebhookResponse>
  */
 export const syncInvoicesFromN8n = async (
   startDate: string,
-  endDate: string
+  endDate: string,
+  company: 'nang_vang' | 'nguyen_luan' = 'nang_vang'
 ): Promise<N8nWebhookResponse> => {
   try {
     // Validate date format
@@ -92,19 +105,25 @@ export const syncInvoicesFromN8n = async (
       throw new N8nWebhookError('Start date cannot be after end date');
     }
 
+    // Get config for selected company
+    const config = N8N_WEBHOOK_CONFIGS[company];
+    if (!config) {
+      throw new N8nWebhookError(`Invalid company: ${company}`);
+    }
+
     const requestPayload: N8nWebhookRequest = {
       start_date: startDate,
       end_date: endDate
     };
 
-    console.log('Calling n8n webhook with payload:', requestPayload);
-    console.log('N8n webhook URL:', N8N_WEBHOOK_CONFIG.url);
-    console.log('Request headers:', N8N_WEBHOOK_CONFIG.headers);
+    console.log(`Calling n8n webhook for ${config.name} with payload:`, requestPayload);
+    console.log('N8n webhook URL:', config.url);
+    console.log('Request headers:', config.headers);
 
     // No timeout for n8n webhook - allow long-running operations
-    const response = await fetch(N8N_WEBHOOK_CONFIG.url, {
+    const response = await fetch(config.url, {
       method: 'POST',
-      headers: N8N_WEBHOOK_CONFIG.headers,
+      headers: config.headers,
       body: JSON.stringify(requestPayload)
     });
 
@@ -222,13 +241,19 @@ function isValidN8nResponse(data: any): data is N8nWebhookResponse {
 
 /**
  * Test webhook connectivity
+ * @param company - Company to test: 'nang_vang' or 'nguyen_luan'
  */
-export const testWebhookConnectivity = async (): Promise<boolean> => {
+export const testWebhookConnectivity = async (company: 'nang_vang' | 'nguyen_luan' = 'nang_vang'): Promise<boolean> => {
   try {
+    const config = N8N_WEBHOOK_CONFIGS[company];
+    if (!config) {
+      return false;
+    }
+
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), 5000); // 5 second timeout
 
-    const response = await fetch(N8N_WEBHOOK_CONFIG.url, {
+    const response = await fetch(config.url, {
       method: 'HEAD', // Just check if endpoint exists
       signal: controller.signal
     });
@@ -241,6 +266,16 @@ export const testWebhookConnectivity = async (): Promise<boolean> => {
     console.error('Webhook connectivity test failed:', error);
     return false;
   }
+};
+
+/**
+ * Get available companies for webhook selection
+ */
+export const getAvailableCompanies = () => {
+  return Object.entries(N8N_WEBHOOK_CONFIGS).map(([key, config]) => ({
+    value: key as 'nang_vang' | 'nguyen_luan',
+    label: config.name
+  }));
 };
 
 /**

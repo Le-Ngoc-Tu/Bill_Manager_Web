@@ -36,20 +36,19 @@ export default function InventoryPage() {
   const [selectedItems, setSelectedItems] = useState<Inventory[]>([])
   const [error, setError] = useState<string | null>(null)
   const [isLoading, setIsLoading] = useState(false)
-  const [categoryFilter, setCategoryFilter] = useState<string>("all") // "all" = tất cả, "HH" = hàng hóa, "CP" = chi phí
+  const [categoryFilter] = useState<string>("HH") // Chỉ hiển thị hàng hóa (HH), chi phí (CP) có trang riêng
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
-    setTitle("Quản lý hàng hóa")
+    setTitle("Quản lý hàng hóa (HH)")
   }, [setTitle])
 
   // Fetch data from API
   const fetchData = async () => {
     try {
       setIsLoading(true)
-      // Gửi tham số category nếu có lọc theo loại (chỉ gửi khi không phải "all")
-      const category = categoryFilter === "all" ? "" : categoryFilter
-      const result = await getInventoryItems(false, category)
+      // Chỉ lấy hàng hóa (HH), chi phí (CP) có trang báo cáo riêng
+      const result = await getInventoryItems(false, "HH")
 
       if (result && result.success) {
         const inventoryData = result.data || [];
@@ -66,10 +65,10 @@ export default function InventoryPage() {
     }
   }
 
-  // Tải dữ liệu khi component được mount hoặc khi thay đổi bộ lọc
+  // Tải dữ liệu khi component được mount
   useEffect(() => {
     fetchData()
-  }, [categoryFilter])
+  }, [])
 
   // State cho trạng thái xóa
   const [isDeleting, setIsDeleting] = useState(false)
@@ -245,23 +244,9 @@ export default function InventoryPage() {
               })}
               data={inventoryItems}
               searchColumn="item_name"
-              searchPlaceholder="Tìm kiếm hàng hóa..."
+              searchPlaceholder="Tìm kiếm hàng hóa (HH)..."
               onDeleteSelected={handleBatchDelete}
-              categoryFilter={
-                <Select
-                  value={categoryFilter}
-                  onValueChange={(value) => setCategoryFilter(value)}
-                >
-                  <SelectTrigger className="w-[150px] h-10 md:h-12 text-sm md:text-base ml-2">
-                    <SelectValue placeholder="Chọn loại" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Tất cả</SelectItem>
-                    <SelectItem value="HH">HH</SelectItem>
-                    <SelectItem value="CP">CP</SelectItem>
-                  </SelectContent>
-                </Select>
-              }
+              categoryFilter={null}
               actionButton={
                 <Button
                   onClick={() => {
@@ -392,13 +377,7 @@ export default function InventoryPage() {
                         Số lượng được tính toán tự động dựa trên các hóa đơn nhập/xuất.
                       </p>
                     </div>
-                    {/* Hiển thị đơn giá cho hàng hóa loại chi phí */}
-                    {selectedItem.category === "CP" && selectedItem.price !== undefined && (
-                      <div>
-                        <p className="text-base md:text-lg font-medium text-gray-500">Đơn giá</p>
-                        <p className="text-lg md:text-xl">{formatPrice(selectedItem.price || 0)}</p>
-                      </div>
-                    )}
+
                   </div>
                 </div>
               )}

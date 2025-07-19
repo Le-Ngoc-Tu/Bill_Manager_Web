@@ -30,7 +30,7 @@ export default function SuppliersPage() {
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
-    setTitle("Quản lý người bán")
+    setTitle("Quản lý công ty")
   }, [setTitle])
 
   // Fetch data from API

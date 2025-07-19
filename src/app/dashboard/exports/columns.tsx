@@ -2,12 +2,19 @@
 
 import { ColumnDef } from "@tanstack/react-table"
 import { Button } from "@/components/ui/button"
-import { ArrowUpDown } from "lucide-react"
-import { FaEye, FaEdit, FaTrash } from "react-icons/fa"
+import { ArrowUpDown, MoreHorizontal } from "lucide-react"
+import { FaEye, FaEdit, FaTrash, FaFilePdf, FaDownload, FaUpload, FaFileCode } from "react-icons/fa"
 import { format } from "date-fns"
 import { ExportInvoice } from "@/lib/api/exports"
 import { Checkbox } from "@/components/ui/checkbox"
-// DropdownMenu đã được xóa vì không sử dụng
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 
 // Import hàm định dạng tiền tệ từ utils
 import { formatCurrency } from "@/lib/utils"
@@ -17,10 +24,14 @@ interface ActionsProps {
   onView: (id: number) => void
   onEdit: (id: number) => void
   onDelete: (id: number) => void
+  onViewPdf: (invoice: ExportInvoice) => void
+  onDownloadXml: (invoice: ExportInvoice) => void
+  onUploadPdf: (invoice: ExportInvoice) => void
+  onUploadXml: (invoice: ExportInvoice) => void
   onDeleteMany?: (selectedRows: ExportInvoice[]) => void
 }
 
-export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDef<ExportInvoice>[] => [
+export const getColumns = ({ onView, onEdit, onDelete, onViewPdf, onDownloadXml, onUploadPdf, onUploadXml }: ActionsProps): ColumnDef<ExportInvoice>[] => [
   // Các cột được định nghĩa với các thuộc tính responsive
   {
     id: "select",
@@ -48,16 +59,6 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     enableHiding: false,
     meta: {
       columnName: "Chọn"
-    },
-  },
-  {
-    accessorKey: "index",
-    header: "STT",
-    cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-    enableSorting: false,
-    enableHiding: false,
-    meta: {
-      columnName: "STT"
     },
   },
   {
@@ -126,7 +127,7 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
     },
     cell: ({ row }) => {
       const item = row.original
-      return <div>{item.customer?.name || 'Chưa có thông tin'}</div>
+      return <div className="text-left">{item.customer?.name || 'Chưa có thông tin'}</div>
     },
     meta: {
       columnName: "Người mua"
@@ -219,36 +220,90 @@ export const getColumns = ({ onView, onEdit, onDelete }: ActionsProps): ColumnDe
   },
   {
     id: "actions",
-    header: "Thao tác",
+    header: () => {
+      return (
+        <div className="text-center" style={{ minWidth: '100px' }}>
+          Thao tác
+        </div>
+      )
+    },
     cell: ({ row }) => {
       const invoice = row.original
 
       return (
-        <div className="flex justify-center gap-2">
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 bg-purple-100 hover:bg-purple-200 border-purple-200 text-purple-700"
-            onClick={() => onView(invoice.id)}
-          >
-            <FaEye className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 bg-green-100 hover:bg-green-200 border-green-200 text-green-700"
-            onClick={() => onEdit(invoice.id)}
-          >
-            <FaEdit className="h-4 w-4" />
-          </Button>
-          <Button
-            variant="outline"
-            size="icon"
-            className="h-8 w-8 bg-red-100 hover:bg-red-200 border-red-200 text-red-700"
-            onClick={() => onDelete(invoice.id)}
-          >
-            <FaTrash className="h-4 w-4" />
-          </Button>
+        <div className="flex justify-center" style={{ minWidth: '100px' }}>
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button variant="ghost" className="h-8 w-8 p-0">
+                <span className="sr-only">Mở menu</span>
+                <MoreHorizontal className="h-4 w-4" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end">
+              <DropdownMenuLabel>Thao tác</DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem
+                onClick={() => onView(invoice.id)}
+                className="cursor-pointer"
+              >
+                <FaEye className="mr-2 h-4 w-4 text-purple-600" />
+                Xem chi tiết
+              </DropdownMenuItem>
+              <DropdownMenuItem
+                onClick={() => onEdit(invoice.id)}
+                className="cursor-pointer"
+              >
+                <FaEdit className="mr-2 h-4 w-4 text-green-600" />
+                Chỉnh sửa
+              </DropdownMenuItem>
+              <DropdownMenuSeparator />
+              {/* PDF Actions */}
+              {invoice.pdf_url ? (
+                <DropdownMenuItem
+                  onClick={() => onViewPdf(invoice)}
+                  className="cursor-pointer"
+                >
+                  <FaFilePdf className="mr-2 h-4 w-4 text-red-600" />
+                  Xem PDF
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  onClick={() => onUploadPdf(invoice)}
+                  className="cursor-pointer"
+                >
+                  <FaUpload className="mr-2 h-4 w-4 text-orange-600" />
+                  Tải lên PDF
+                </DropdownMenuItem>
+              )}
+
+              {/* XML Actions */}
+              {invoice.xml_url ? (
+                <DropdownMenuItem
+                  onClick={() => onDownloadXml(invoice)}
+                  className="cursor-pointer"
+                >
+                  <FaDownload className="mr-2 h-4 w-4 text-blue-600" />
+                  Tải XML
+                </DropdownMenuItem>
+              ) : (
+                <DropdownMenuItem
+                  onClick={() => onUploadXml(invoice)}
+                  className="cursor-pointer"
+                >
+                  <FaUpload className="mr-2 h-4 w-4 text-orange-600" />
+                  Tải lên XML
+                </DropdownMenuItem>
+              )}
+              {(invoice.pdf_url || invoice.xml_url) && <DropdownMenuSeparator />}
+              <DropdownMenuItem
+                onClick={() => onDelete(invoice.id)}
+                className="cursor-pointer text-red-600 focus:text-red-600"
+              >
+                <FaTrash className="mr-2 h-4 w-4" />
+                Xóa
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
         </div>
       )
     },

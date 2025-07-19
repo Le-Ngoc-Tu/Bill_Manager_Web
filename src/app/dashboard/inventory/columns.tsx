@@ -55,16 +55,6 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
     },
     {
-      accessorKey: "index",
-      header: "STT",
-      cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-      enableSorting: false,
-      enableHiding: false,
-      meta: {
-        columnName: "STT"
-      },
-    },
-    {
       accessorKey: "item_name",
       header: ({ column }) => {
         return (
@@ -83,7 +73,7 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       cell: ({ row }) => {
         const itemName = row.getValue("item_name") as string;
         console.log('Rendering item_name:', itemName, 'for row:', row.original);
-        return <div>{itemName}</div>;
+        return <div className="text-left">{itemName}</div>;
       },
       meta: {
         columnName: "Tên hàng hóa"

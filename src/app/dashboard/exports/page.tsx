@@ -11,14 +11,17 @@ import { Label } from "@/components/ui/label"
 import { DatePicker } from "@/components/ui/date-picker"
 import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
 import FinancialSummaryCards from "@/components/ui/FinancialSummaryCards"
-import { FaPlus, FaFilter } from "react-icons/fa"
+import { FaPlus, FaFilter, FaFileUpload, FaSync } from "react-icons/fa"
 import { DataTable } from "@/components/ui/data-table"
+import { PDFViewer } from "@/components/ui/PDFViewer"
+import { AttachmentUploadModal } from "@/components/ui/AttachmentUploadModal"
 import { getColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { formatCurrency, formatQuantity, formatPrice } from "@/lib/utils"
 import { ExportForm } from "@/components/forms/ExportForm"
+import { ExportXMLUploadForm } from "@/components/forms/ExportXMLUploadForm"
 
 // Import các API đã tách
 import { getExports, getExportById, createExport, updateExport, deleteExport, ExportInvoice, ExportFormData } from "@/lib/api/exports"
@@ -31,9 +34,23 @@ export default function ExportsPage() {
   const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false)
   const [isViewModalOpen, setIsViewModalOpen] = useState(false)
   const [isBatchDeleteModalOpen, setIsBatchDeleteModalOpen] = useState(false)
+  const [showUploadModal, setShowUploadModal] = useState(false)
   const [selectedExport, setSelectedExport] = useState<ExportInvoice | null>(null)
   const [selectedExports, setSelectedExports] = useState<ExportInvoice[]>([])
   const [error, setError] = useState<string | null>(null)
+
+  // PDF Viewer state
+  const [isPDFViewerOpen, setIsPDFViewerOpen] = useState(false)
+  const [currentPDFUrl, setCurrentPDFUrl] = useState<string>("")
+  const [currentPDFTitle, setCurrentPDFTitle] = useState<string>("")
+
+  // Attachment Upload Modal state
+  const [isUploadModalOpen, setIsUploadModalOpen] = useState(false)
+  const [uploadModalConfig, setUploadModalConfig] = useState<{
+    recordId: number
+    fileType: 'pdf' | 'xml'
+    currentFileName?: string
+  } | null>(null)
 
   // State cho bộ lọc nâng cao
   const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
@@ -274,6 +291,92 @@ export default function ExportsPage() {
     }
   }
 
+  // Xử lý xem PDF
+  const handleViewPdf = (invoice: ExportInvoice) => {
+    if (!invoice.pdf_url) {
+      toast.error("Không tìm thấy file PDF")
+      return
+    }
+
+    const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+    // Loại bỏ /api từ backendUrl và thêm trực tiếp path
+    const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+    const pdfUrl = `${baseUrl}/${invoice.pdf_url}`
+
+    // Mở PDF trong PDFViewer component
+    setCurrentPDFUrl(pdfUrl)
+    setCurrentPDFTitle(`Hóa đơn ${invoice.invoice_number}`)
+    setIsPDFViewerOpen(true)
+  }
+
+  // Xử lý tải XML
+  const handleDownloadXml = async (invoice: ExportInvoice) => {
+    if (!invoice.xml_url) {
+      toast.error("Không tìm thấy file XML")
+      return
+    }
+
+    try {
+      const backendUrl = process.env.NEXT_PUBLIC_BACKEND_URL
+      // Loại bỏ /api từ backendUrl và thêm trực tiếp path
+      const baseUrl = backendUrl?.replace('/api', '') || 'http://localhost:7010'
+      const xmlUrl = `${baseUrl}/${invoice.xml_url}`
+
+      // Fetch file và tạo blob để force download
+      const response = await fetch(xmlUrl)
+      if (!response.ok) {
+        throw new Error(`HTTP error! status: ${response.status}`)
+      }
+
+      const blob = await response.blob()
+      const url = window.URL.createObjectURL(blob)
+
+      // Tạo anchor element để download
+      const link = document.createElement('a')
+      link.href = url
+      link.download = `invoice_${invoice.invoice_number}.xml`
+      document.body.appendChild(link)
+      link.click()
+
+      // Cleanup
+      document.body.removeChild(link)
+      window.URL.revokeObjectURL(url)
+
+      toast.success("Tải file XML thành công!")
+    } catch (error) {
+      console.error("Error downloading XML:", error)
+      toast.error("Lỗi khi tải file XML")
+    }
+  }
+
+  // Xử lý upload PDF
+  const handleUploadPdf = (invoice: ExportInvoice) => {
+    setUploadModalConfig({
+      recordId: invoice.id,
+      fileType: 'pdf',
+      currentFileName: invoice.pdf_url ? `Hóa đơn ${invoice.invoice_number}.pdf` : undefined
+    })
+    setIsUploadModalOpen(true)
+  }
+
+  // Xử lý upload XML
+  const handleUploadXml = (invoice: ExportInvoice) => {
+    setUploadModalConfig({
+      recordId: invoice.id,
+      fileType: 'xml',
+      currentFileName: invoice.xml_url ? `Hóa đơn ${invoice.invoice_number}.xml` : undefined
+    })
+    setIsUploadModalOpen(true)
+  }
+
+  // Xử lý thành công upload
+  const handleUploadSuccess = () => {
+    // Refresh data để cập nhật UI
+    fetchData()
+    setIsUploadModalOpen(false)
+    setUploadModalConfig(null)
+  }
+
   // Sử dụng các hàm định dạng từ utils
 
   return (
@@ -332,6 +435,21 @@ export default function ExportsPage() {
                 Xóa bộ lọc
               </Button>
 
+              <Button
+                onClick={() => {
+                  toast.info("Tính năng N8N Webhook cho Export đang được phát triển", {
+                    description: "Vui lòng sử dụng tính năng tải hóa đơn thủ công",
+                    duration: 5000
+                  })
+                }}
+                variant="outline"
+                className="h-10 bg-green-50 border-green-200 text-green-700 hover:bg-green-100"
+                disabled={isFiltering}
+              >
+                <FaSync className="mr-2 h-4 w-4" />
+                Làm mới (Đang phát triển)
+              </Button>
+
               <div className="text-sm bg-blue-50 px-3 py-2 rounded-lg border border-blue-200">
                 <span className="text-blue-600 font-medium">
                   {filteredExports.length} / {allExports.length} hóa đơn
@@ -368,33 +486,48 @@ export default function ExportsPage() {
                     setIsDeleteModalOpen(true);
                   }
                 },
-                onDeleteMany: handleBatchDelete
+                onViewPdf: handleViewPdf,
+                onDownloadXml: handleDownloadXml,
+                onUploadPdf: handleUploadPdf,
+                onUploadXml: handleUploadXml
               })}
               data={filteredExports}
               searchColumn=""
               searchPlaceholder=""
               onDeleteSelected={handleBatchDelete}
               actionButton={
-                <Button
-                  onClick={() => {
-                    setSelectedExport(null)
-                    setIsModalOpen(true)
-                  }}
-                  className="h-10 md:h-12 text-sm md:text-base"
-                  disabled={isFiltering}
-                >
-                  {isFiltering ? (
-                    <>
-                      <div className="mr-2 h-3 w-3 md:h-4 md:w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                      Đang tải...
-                    </>
-                  ) : (
-                    <>
-                      <FaPlus className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-                      Thêm hóa đơn
-                    </>
-                  )}
-                </Button>
+                <div className="flex gap-2 flex-wrap">
+                  <Button
+                    onClick={() => setShowUploadModal(true)}
+                    variant="outline"
+                    className="h-10 md:h-12 text-sm md:text-base border-green-600 text-green-600 hover:bg-green-50"
+                    disabled={isFiltering}
+                  >
+                    <FaFileUpload className="mr-1 h-3 w-3 md:h-4 md:w-4" />
+                    Tải hóa đơn
+                  </Button>
+
+                  <Button
+                    onClick={() => {
+                      setSelectedExport(null)
+                      setIsModalOpen(true)
+                    }}
+                    className="h-10 md:h-12 text-sm md:text-base"
+                    disabled={isFiltering}
+                  >
+                    {isFiltering ? (
+                      <>
+                        <div className="mr-2 h-3 w-3 md:h-4 md:w-4 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                        Đang tải...
+                      </>
+                    ) : (
+                      <>
+                        <FaPlus className="mr-1 h-3 w-3 md:h-4 md:w-4" />
+                        Thêm hóa đơn
+                      </>
+                    )}
+                  </Button>
+                </div>
               }
             />
           </div>
@@ -794,6 +927,49 @@ export default function ExportsPage() {
                   )}
                 </Button>
               </DialogFooter>
+            </DialogContent>
+          </Dialog>
+
+          {/* PDF Viewer Modal */}
+          <PDFViewer
+            isOpen={isPDFViewerOpen}
+            onClose={() => setIsPDFViewerOpen(false)}
+            pdfUrl={currentPDFUrl}
+            title={currentPDFTitle}
+          />
+
+          {/* Modal Upload Attachment */}
+          {uploadModalConfig && (
+            <AttachmentUploadModal
+              isOpen={isUploadModalOpen}
+              onClose={() => {
+                setIsUploadModalOpen(false)
+                setUploadModalConfig(null)
+              }}
+              onSuccess={handleUploadSuccess}
+              recordId={uploadModalConfig.recordId}
+              recordType="export"
+              fileType={uploadModalConfig.fileType}
+              currentFileName={uploadModalConfig.currentFileName}
+            />
+          )}
+
+          {/* Modal Tải Hóa Đơn */}
+          <Dialog open={showUploadModal} onOpenChange={setShowUploadModal}>
+            <DialogContent className="max-w-[98vw] md:max-w-[95vw] lg:max-w-[90vw] xl:max-w-[1200px] w-full p-6 md:p-8 max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle className="text-xl font-semibold">Tải Hóa Đơn</DialogTitle>
+              </DialogHeader>
+              <div className="mt-4">
+                <ExportXMLUploadForm
+                  onSuccess={() => {
+                    setShowUploadModal(false)
+                    fetchData() // Refresh data
+                    toast.success("Tải hóa đơn xuất thành công!")
+                  }}
+                  onCancel={() => setShowUploadModal(false)}
+                />
+              </div>
             </DialogContent>
           </Dialog>
     </div>

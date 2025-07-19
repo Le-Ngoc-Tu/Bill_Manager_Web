@@ -31,7 +31,7 @@ export default function CustomersPage() {
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
-    setTitle("Quản lý người mua")
+    setTitle("Quản lý đối tác")
   }, [setTitle])
 
   // Fetch data from API

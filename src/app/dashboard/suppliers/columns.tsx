@@ -48,16 +48,6 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
       },
     },
     {
-      accessorKey: "index",
-      header: "STT",
-      cell: ({ row }) => <div className="text-center">{row.index + 1}</div>,
-      enableSorting: false,
-      enableHiding: false,
-      meta: {
-        columnName: "STT"
-      },
-    },
-    {
       accessorKey: "name",
       header: ({ column }) => {
         return (
@@ -67,15 +57,15 @@ export function getColumns({ onView, onEdit, onDelete }: GetColumnsProps): Colum
               onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
               className="w-full hover:bg-red-800 hover:text-white"
             >
-              Tên người bán
+              Tên công ty
               <ArrowUpDown className="ml-2 h-4 w-4" />
             </Button>
           </div>
         )
       },
-      cell: ({ row }) => <div>{row.getValue("name")}</div>,
+      cell: ({ row }) => <div className="text-left">{row.getValue("name")}</div>,
       meta: {
-        columnName: "Tên người bán"
+        columnName: "Tên công ty"
       },
     },
     {

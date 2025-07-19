@@ -2,14 +2,15 @@
 
 import { type Icon } from "@tabler/icons-react"
 import { IconType } from "react-icons"
-import { useRouter, usePathname } from "next/navigation"
+import { usePathname } from "next/navigation"
 import { useState, useEffect } from "react"
+import Link from "next/link"
+import { InlineNavigationLoading } from "@/components/ui/navigation-loading"
 
 import {
   SidebarGroup,
   SidebarGroupContent,
   SidebarMenu,
-  SidebarMenuButton,
   SidebarMenuItem,
 } from "@/components/ui/sidebar"
 
@@ -22,7 +23,6 @@ export function NavMain({
     icon?: Icon | IconType
   }[]
 }) {
-  const router = useRouter()
   const pathname = usePathname()
   const [activeItem, setActiveItem] = useState<string | null>(null)
 
@@ -33,11 +33,7 @@ export function NavMain({
     setActiveItem(matchedItem?.url || null)
   }, [pathname, items])
 
-  // Hàm xử lý khi nhấn vào menu item
-  const handleNavigation = (url: string) => {
-    setActiveItem(url)
-    router.push(url)
-  }
+  // Không cần handleNavigation nữa vì sử dụng Link component
 
   return (
     <SidebarGroup>
@@ -48,18 +44,20 @@ export function NavMain({
 
             return (
               <SidebarMenuItem key={item.title}>
-                <SidebarMenuButton
-                  tooltip={item.title}
-                  className={`group py-3 sm:py-4 md:py-6 px-3 sm:px-4 md:px-5 text-base sm:text-xl md:text-2xl w-full transition-all duration-300 rounded-md
+                <Link
+                  href={item.url}
+                  prefetch={true}
+                  className={`group py-3 px-3 sm:px-4 md:px-5 text-base sm:text-xl md:text-2xl w-full transition-all duration-300 rounded-md flex items-center
                     ${isActive
                       ? "bg-red-700 text-white hover:bg-red-700 hover:text-white"
                       : "hover:bg-red-400/70 hover:text-white active:bg-red-700 active:text-white"
                     }`}
-                  onClick={() => handleNavigation(item.url)}
+                  onClick={() => setActiveItem(item.url)}
                 >
                   {item.icon && <item.icon className="size-5 sm:size-6 md:size-7 mr-2 sm:mr-3 transition-colors duration-300" />}
                   <span className="text-sm sm:text-base md:text-[18px] transition-colors duration-300">{item.title}</span>
-                </SidebarMenuButton>
+                  <InlineNavigationLoading />
+                </Link>
               </SidebarMenuItem>
             )
           })}

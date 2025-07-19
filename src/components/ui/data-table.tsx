@@ -48,6 +48,7 @@ import {
   PaginationLink,
   PaginationNext,
   PaginationPrevious,
+  PaginationGoTo,
 } from "@/components/ui/pagination"
 
 interface DataTableProps<TData, TValue> {
@@ -315,6 +316,16 @@ export function DataTable<TData, TValue>({
               </PaginationItem>
             </PaginationContent>
           </Pagination>
+
+          {/* Go to page component */}
+          {table.getPageCount() > 5 && (
+            <PaginationGoTo
+              currentPage={table.getState().pagination.pageIndex + 1}
+              totalPages={table.getPageCount()}
+              onPageChange={(page) => table.setPageIndex(page - 1)}
+              className="mt-2 sm:mt-0 sm:ml-4"
+            />
+          )}
         </div>
       </div>
     </div>

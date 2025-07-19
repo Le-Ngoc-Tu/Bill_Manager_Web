@@ -5,15 +5,12 @@ import { usePageTitle } from "@/lib/page-title-context"
 import { useState, useEffect } from "react"
 import { toast } from "sonner"
 import { Button } from "@/components/ui/button"
-import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog"
-import { Badge } from "@/components/ui/badge"
-import { Label } from "@/components/ui/label"
-import { DatePicker } from "@/components/ui/date-picker"
 import { Input } from "@/components/ui/input"
 import { FaFilter, FaFileExport } from "react-icons/fa"
 import { DataTable } from "@/components/ui/data-table"
 import { getDetailColumns, getSummaryColumns } from "./columns"
 import { format, startOfDay, endOfDay } from "date-fns"
+import CustomDateRangePicker from "@/components/ui/CustomDateRangePicker"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { ScrollArea } from "@/components/ui/scroll-area"
 import { formatCurrency, formatQuantity } from "@/lib/utils"
@@ -31,7 +28,6 @@ export default function ExpenseReportPage() {
   const [error, setError] = useState<string | null>(null)
 
   // State cho bộ lọc
-  const [isFilterModalOpen, setIsFilterModalOpen] = useState(false)
   const [startDate, setStartDate] = useState<Date | undefined>(undefined)
   const [endDate, setEndDate] = useState<Date | undefined>(undefined)
   const [itemName, setItemName] = useState<string>("")
@@ -118,51 +114,68 @@ export default function ExpenseReportPage() {
               </div>
             )}
 
-            {/* Bộ lọc */}
-            <div className="flex flex-col sm:flex-row items-center gap-2 mb-4">
-              <Button
-                variant="outline"
-                onClick={() => setIsFilterModalOpen(true)}
-                className="w-full sm:w-auto h-10 md:h-12 text-sm md:text-base"
-              >
-                <FaFilter className="mr-1 h-3 w-3 md:h-4 md:w-4" />
-                Bộ lọc
-              </Button>
+            {/* Bộ lọc thời gian */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border mb-4">
+              <div className="flex flex-col lg:flex-row lg:items-center lg:justify-between gap-4">
+                <div className="flex flex-col sm:flex-row gap-4 flex-1">
+                  <div className="flex-1 max-w-60">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Lọc theo ngày lập hóa đơn chi phí
+                    </label>
+                    <CustomDateRangePicker
+                      startDate={startDate}
+                      endDate={endDate}
+                      onStartDateChange={setStartDate}
+                      onEndDateChange={setEndDate}
+                      onRangeChange={(start: Date | undefined, end: Date | undefined) => {
+                        setStartDate(start)
+                        setEndDate(end)
+                      }}
+                      className="w-full"
+                      placeholder="Chọn khoảng thời gian"
+                    />
+                  </div>
 
-              {/* Hiển thị thông tin bộ lọc đang áp dụng */}
-              {(startDate || endDate || itemName) && (
-                <div className="flex flex-wrap items-center gap-2 text-sm text-gray-500">
-                  <span>Bộ lọc: </span>
-                  {startDate && (
-                    <Badge variant="outline" className="font-normal">
-                      Từ ngày: {format(startDate, 'dd/MM/yyyy')}
-                    </Badge>
-                  )}
-                  {endDate && (
-                    <Badge variant="outline" className="font-normal">
-                      Đến ngày: {format(endDate, 'dd/MM/yyyy')}
-                    </Badge>
-                  )}
-                  {itemName && (
-                    <Badge variant="outline" className="font-normal">
-                      Tên chi phí: {itemName}
-                    </Badge>
-                  )}
+                  <div className="flex-1 max-w-60">
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Tìm kiếm theo tên chi phí
+                    </label>
+                    <Input
+                      placeholder="Nhập tên chi phí..."
+                      value={itemName}
+                      onChange={(e) => setItemName(e.target.value)}
+                      className="w-full"
+                    />
+                  </div>
+                </div>
+
+                <div className="flex gap-2">
+                  <Button
+                    onClick={() => fetchData()}
+                    className="bg-blue-600 hover:bg-blue-700 text-white"
+                    disabled={isFiltering}
+                  >
+                    <FaFilter className="mr-2 h-4 w-4" />
+                    Lọc dữ liệu
+                  </Button>
 
                   <Button
-                    variant="ghost"
-                    size="sm"
+                    variant="outline"
                     onClick={() => {
-                      // Gọi fetchData với tham số resetFilters = true để xóa bộ lọc và tải lại tất cả dữ liệu
-                      fetchData(true);
+                      setStartDate(undefined)
+                      setEndDate(undefined)
+                      setItemName("")
+                      fetchData(true)
                     }}
-                    className="h-6 px-2 text-xs"
+                    disabled={isFiltering}
                   >
                     Xóa bộ lọc
                   </Button>
                 </div>
-              )}
+              </div>
             </div>
+
+
 
             {/* Hiển thị trạng thái đang tải */}
             {isFiltering && (
@@ -241,79 +254,7 @@ export default function ExpenseReportPage() {
             </Tabs>
           </div>
 
-        {/* Modal bộ lọc */}
-          <Dialog open={isFilterModalOpen} onOpenChange={setIsFilterModalOpen}>
-            <DialogContent className="max-w-md">
-              <DialogHeader>
-                <DialogTitle className="text-lg md:text-xl">Bộ lọc báo cáo chi phí</DialogTitle>
-                <DialogDescription className="text-sm md:text-base">
-                  Lọc báo cáo chi phí theo khoảng thời gian và tên chi phí
-                </DialogDescription>
-              </DialogHeader>
 
-              <div className="space-y-4 py-2">
-                <div className="space-y-2">
-                  <Label htmlFor="start-date" className="text-sm md:text-base font-medium">Từ ngày</Label>
-                  <DatePicker
-                    date={startDate}
-                    setDate={setStartDate}
-                    className="w-full"
-                    placeholder="Chọn ngày bắt đầu"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="end-date" className="text-sm md:text-base font-medium">Đến ngày</Label>
-                  <DatePicker
-                    date={endDate}
-                    setDate={setEndDate}
-                    className="w-full"
-                    placeholder="Chọn ngày kết thúc"
-                  />
-                </div>
-
-                <div className="space-y-2">
-                  <Label htmlFor="item-name" className="text-sm md:text-base font-medium">Tên chi phí</Label>
-                  <Input
-                    id="item-name"
-                    value={itemName}
-                    onChange={(e) => setItemName(e.target.value)}
-                    placeholder="Nhập tên chi phí"
-                    className="w-full"
-                  />
-                </div>
-              </div>
-
-              <DialogFooter className="flex gap-2 pt-4">
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    // Gọi fetchData với tham số resetFilters = true để xóa bộ lọc và tải lại tất cả dữ liệu
-                    fetchData(true);
-                    setIsFilterModalOpen(false);
-                  }}
-                >
-                  Xóa bộ lọc
-                </Button>
-                <Button
-                  onClick={() => {
-                    fetchData();
-                    setIsFilterModalOpen(false);
-                  }}
-                  disabled={isFiltering}
-                >
-                  {isFiltering ? (
-                    <>
-                      <div className="mr-2 h-3 w-3 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
-                      Đang xử lý...
-                    </>
-                  ) : (
-                    "Áp dụng"
-                  )}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
     </div>
   )
 }

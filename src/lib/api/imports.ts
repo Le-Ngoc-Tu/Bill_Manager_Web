@@ -32,6 +32,9 @@ export interface ImportInvoice {
   createdAt: string;
   updatedAt: string;
   details: ImportDetail[];
+  // File URLs for PDF and XML
+  pdf_url?: string;
+  xml_url?: string;
   // Added supplier/customer info at invoice level
   supplier_id?: number | null;
   customer_id?: number | null;
@@ -242,16 +245,18 @@ export interface XMLPreviewData {
 
 export interface XMLPreviewResponse {
   tempFileId: string;
-  fileName: string;
+  fileName?: string; // Legacy field
   previewData: XMLPreviewData;
+  hasXml: boolean;
+  hasPdf: boolean;
+  fromZip: boolean;
+  xmlFileName?: string;
+  pdfFileName?: string;
 }
 
 // Upload XML và lấy preview data
-export const uploadXMLPreview = async (file: File) => {
+export const uploadXMLPreview = async (formData: FormData) => {
   try {
-    const formData = new FormData();
-    formData.append('file', file);
-
     const response = await apiClient.post('/invoices/xml/upload-preview', formData, {
       headers: {
         'Content-Type': 'multipart/form-data',
@@ -266,12 +271,13 @@ export const uploadXMLPreview = async (file: File) => {
 };
 
 // Lưu preview data vào database
-export const saveXMLPreview = async (tempFileId: string, previewData: XMLPreviewData) => {
+export const saveXMLPreview = async (tempFileId: string, previewData: XMLPreviewData, invoiceType: string = 'auto') => {
   try {
     const response = await apiClient.post('/invoices/xml/save-from-preview', {
       tempFileId,
       previewData,
-      confirmed: true
+      confirmed: true,
+      invoice_type: invoiceType
     });
 
     return response.data;
@@ -325,6 +331,24 @@ export const deleteImportDetail = async (importId: number, detailId: number) => 
     return response.data;
   } catch (error) {
     console.error("Error deleting import detail:", error);
+    throw error;
+  }
+};
+
+// Upload bổ sung PDF/XML cho hóa đơn nhập
+export const uploadImportAttachment = async (importId: number, file: File) => {
+  try {
+    const formData = new FormData();
+    formData.append('file', file);
+
+    const response = await apiClient.post(`/imports/${importId}/upload-attachment`, formData, {
+      headers: {
+        'Content-Type': 'multipart/form-data',
+      },
+    });
+    return response.data;
+  } catch (error) {
+    console.error('Error uploading import attachment:', error);
     throw error;
   }
 };

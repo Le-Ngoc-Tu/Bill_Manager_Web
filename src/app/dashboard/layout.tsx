@@ -3,10 +3,11 @@
 import { AppSidebar } from "@/components/app-sidebar"
 import { SiteHeader } from "@/components/site-header"
 import { SidebarInset, SidebarProvider } from "@/components/ui/sidebar"
+import { NavigationLoading } from "@/components/ui/navigation-loading"
 import { useAuth } from "@/lib/auth"
 import { useIsMobile } from "@/hooks/use-mobile"
 import { useRouter } from "next/navigation"
-import { useEffect } from "react"
+import { useEffect, Suspense } from "react"
 
 export default function DashboardLayout({
   children,
@@ -53,6 +54,11 @@ export default function DashboardLayout({
         } as React.CSSProperties
       }
     >
+      {/* Navigation Loading Indicator */}
+      <Suspense fallback={null}>
+        <NavigationLoading />
+      </Suspense>
+
       <AppSidebar variant="inset" />
       <SidebarInset>
         <SiteHeader />

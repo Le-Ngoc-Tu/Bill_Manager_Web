@@ -4,7 +4,7 @@ import { createContext, useContext, useEffect, useState, ReactNode, useRef } fro
 import { useRouter } from "next/navigation";
 import axios from "axios";
 import apiClient, { API_URL, isTokenExpired } from "./api/config";
-import jwtDecode from "jwt-decode";
+import { jwtDecode } from "jwt-decode";
 import { TokenMonitor, DEFAULT_TOKEN_MONITOR_CONFIG, type TokenMonitorConfig } from "./token-monitor";
 import { toast } from "sonner";
 
