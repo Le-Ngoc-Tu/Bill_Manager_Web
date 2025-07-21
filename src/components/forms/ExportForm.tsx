@@ -393,9 +393,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
             return true
         }
 
-        // Kiểm tra xem có phải là dịch vụ lao động không
+        // Kiểm tra xem có phải là dịch vụ lao động không (chỉ đơn vị "công" hoặc "Công")
         const unit = form.getValues(`details.${index}.unit`) || "";
-        const isLaborService = unit.toLowerCase().includes('công');
+        const isLaborService = unit.trim() === 'công' || unit.trim() === 'Công';
 
         // Nếu là dịch vụ lao động, bỏ qua kiểm tra tồn kho
         if (isLaborService) {
@@ -1129,9 +1129,9 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         const numValue = isEmpty ? 0 : (parseFloat(trimmedValue) || 0)
         form.setValue(`details.${index}.quantity`, numValue)
 
-        // Kiểm tra xem có phải là dịch vụ lao động không
+        // Kiểm tra xem có phải là dịch vụ lao động không (chỉ đơn vị "công" hoặc "Công")
         const unit = form.getValues(`details.${index}.unit`) || "";
-        const isLaborService = unit.toLowerCase().includes('công');
+        const isLaborService = unit.trim() === 'công' || unit.trim() === 'Công';
 
         // Nếu là dịch vụ lao động, bỏ qua kiểm tra tồn kho
         if (isLaborService) {
@@ -1432,8 +1432,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
         for (let i = 0; i < data.details.length; i++) {
             const detail = data.details[i];
             if (detail.item_name && detail.item_name.trim() !== "") {
-                // Kiểm tra xem có phải là dịch vụ lao động không
-                const isLaborService = detail.unit && detail.unit.toLowerCase().includes('công');
+                // Kiểm tra xem có phải là dịch vụ lao động không (chỉ đơn vị "công" hoặc "Công")
+                const isLaborService = detail.unit && (detail.unit.trim() === 'công' || detail.unit.trim() === 'Công');
 
                 // Nếu là dịch vụ lao động, bỏ qua kiểm tra tồn kho
                 if (isLaborService) {
@@ -1554,8 +1554,8 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                         );
 
                         if (detailIndex !== -1) {
-                            // Kiểm tra xem có phải là dịch vụ lao động không
-                            const isLaborService = detail.unit && detail.unit.toLowerCase().includes('công');
+                            // Kiểm tra xem có phải là dịch vụ lao động không (chỉ đơn vị "công" hoặc "Công")
+                            const isLaborService = detail.unit && (detail.unit.trim() === 'công' || detail.unit.trim() === 'Công');
 
                             // ✅ Bỏ kiểm tra tồn kho trong submit - cho phép xuất kho vượt quá
 
@@ -2609,7 +2609,7 @@ export function ExportForm({ mode, initialData, onSubmit, onCancel }: ExportForm
                                                             const inventoryId = form.getValues(`details.${actualIndex}.inventory_id`);
                                                             const unit = form.getValues(`details.${actualIndex}.unit`) || "";
                                                             const quantity = form.getValues(`details.${actualIndex}.quantity`) || 0;
-                                                            const isLaborService = unit.toLowerCase().includes('công');
+                                                            const isLaborService = unit.trim() === 'công' || unit.trim() === 'Công';
 
                                                             // ✅ LOẠI BỎ hiển thị "Tồn kho sau xuất" theo yêu cầu user
                                                             return null;
