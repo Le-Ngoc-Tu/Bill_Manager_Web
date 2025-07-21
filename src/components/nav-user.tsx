@@ -133,8 +133,8 @@ export function NavUser({
   // Hàm lấy URL avatar với kiểm tra null và undefined
   const getAvatarUrl = (avatarPath: string | null | undefined) => {
     if (!avatarPath) return null
-    const baseUrl = BACKEND_URL.replace('/api', '')
-    return `${baseUrl}/api/avatar/${avatarPath.split('/').pop()}`
+    // Sử dụng đúng đường dẫn uploads/avatars
+    return `${BACKEND_URL}/uploads/avatars/${avatarPath.split('/').pop()}`
   }
 
   // Ưu tiên sử dụng fullname và đảm bảo không sử dụng username nếu có fullname
