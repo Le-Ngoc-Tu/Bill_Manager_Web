@@ -30,7 +30,8 @@ import {
   syncInvoicesFromN8n,
   N8nWebhookError,
   N8nNetworkError,
-  getAvailableCompanies
+  getAvailableCompanies,
+  formatWebhookResult
 } from "@/lib/api/n8n-webhook"
 
 // These interfaces will be used in the future implementation of the add/edit form
@@ -101,8 +102,14 @@ export default function ImportsPage() {
   // State cho n8n sync functionality
   const [isSyncModalOpen, setIsSyncModalOpen] = useState(false)
   const [isSyncing, setIsSyncing] = useState(false)
-  const [syncStartDate, setSyncStartDate] = useState<Date | undefined>(undefined)
-  const [syncEndDate, setSyncEndDate] = useState<Date | undefined>(undefined)
+  const [syncStartDate, setSyncStartDate] = useState<Date | undefined>(() => {
+    const today = new Date()
+    return startOfDay(today)
+  })
+  const [syncEndDate, setSyncEndDate] = useState<Date | undefined>(() => {
+    const today = new Date()
+    return endOfDay(today)
+  })
 
   // Đặt tiêu đề khi trang được tải
   useEffect(() => {
@@ -519,13 +526,15 @@ export default function ImportsPage() {
         duration: 5000
       })
 
-      await syncInvoicesFromN8n(startDateStr, endDateStr, selectedCompany)
+      const result = await syncInvoicesFromN8n(startDateStr, endDateStr, selectedCompany)
 
-      // Đơn giản hóa: nếu 200 OK thì refresh page và đóng modal
+      // Sử dụng formatWebhookResult để hiển thị kết quả chi tiết
+      const resultMessage = formatWebhookResult(result, !isSyncAll)
       toast.success(`Đồng bộ hóa đơn ${companyName} thành công!`, {
+        description: resultMessage,
         className: "text-lg font-medium",
         descriptionClassName: "text-base",
-        duration: 3000
+        duration: 5000
       })
 
       // Refresh data và đóng modal
@@ -564,8 +573,9 @@ export default function ImportsPage() {
 
   // Reset sync modal state
   const resetSyncModal = () => {
-    setSyncStartDate(undefined)
-    setSyncEndDate(undefined)
+    const today = new Date()
+    setSyncStartDate(startOfDay(today))
+    setSyncEndDate(endOfDay(today))
   }
 
   // Handle keyboard shortcuts
@@ -1151,6 +1161,27 @@ export default function ImportsPage() {
                       placeholder="Chọn khoảng thời gian"
                     />
                   </div>
+
+                  {/* Ghi chú khi chọn "Tất cả" */}
+                  {!syncStartDate && !syncEndDate && (
+                    <div className="mt-2 p-3 bg-orange-50 border border-orange-200 rounded-md">
+                      <div className="flex items-start">
+                        <div className="flex-shrink-0">
+                          <svg className="h-5 w-5 text-orange-400" viewBox="0 0 20 20" fill="currentColor">
+                            <path fillRule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clipRule="evenodd" />
+                          </svg>
+                        </div>
+                        <div className="ml-3">
+                          <h3 className="text-sm font-medium text-orange-800">
+                            Đồng bộ tất cả hóa đơn
+                          </h3>
+                          <div className="mt-1 text-sm text-orange-700">
+                            Bạn đã chọn đồng bộ tất cả hóa đơn từ email. Bộ lọc thời gian sẽ được bỏ qua và hệ thống sẽ gửi yêu cầu với body rỗng để xử lý tất cả hóa đơn có sẵn.
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Company Selection */}
@@ -1184,7 +1215,7 @@ export default function ImportsPage() {
                 </Button>
                 <Button
                   onClick={handleSyncFromN8n}
-                  disabled={isSyncing || !syncStartDate || !syncEndDate || !canSync()}
+                  disabled={isSyncing || !canSync() || ((!!syncStartDate && !syncEndDate) || (!syncStartDate && !!syncEndDate))}
                   className="bg-green-600 hover:bg-green-700 disabled:opacity-50"
                   title={!canSync() ? `Đợi ${Math.ceil((SYNC_COOLDOWN - (Date.now() - lastSyncTime)) / 1000)} giây` : ''}
                 >

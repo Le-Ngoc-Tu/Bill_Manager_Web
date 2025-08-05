@@ -211,7 +211,29 @@ export const syncInvoicesFromN8n = async (
 
     console.log('Parsed n8n webhook response:', data);
 
-    // Validate response structure
+    // Check if it's a simple status response (for sync all)
+    if (data && typeof data === 'object' && 'status' in data && !('code' in data)) {
+      console.log('Received simple status response, converting to standard format');
+      const statusResponse = data as { status: string };
+      // Convert simple status response to standard format
+      return {
+        code: statusResponse.status === '1' ? 200 : 400,
+        message: statusResponse.status === '1' ? 'Sync completed successfully' : 'Sync failed',
+        data: {
+          success: [],
+          errors: [],
+          folder: null,
+          summary: {
+            total_files: 0,
+            success_count: 0,
+            duplicate_count: 0,
+            failed_count: 0
+          }
+        }
+      };
+    }
+
+    // Validate response structure for standard format
     if (!isValidN8nResponse(data)) {
       throw new N8nWebhookError('Invalid response format from n8n webhook');
     }
@@ -322,6 +344,11 @@ export const syncAllInvoicesFromN8n = async (
  */
 export const formatWebhookResult = (response: N8nWebhookResponse, hasDateFilter: boolean = true): string => {
   const { summary } = response.data;
+
+  // Check if this is a converted simple status response (sync all case)
+  if (response.message === 'Sync completed successfully' && summary.total_files === 0) {
+    return 'Đồng bộ tất cả hóa đơn hoàn tất thành công.';
+  }
 
   if (summary.total_files === 0) {
     return hasDateFilter
