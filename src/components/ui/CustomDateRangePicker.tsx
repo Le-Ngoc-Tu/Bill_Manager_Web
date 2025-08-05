@@ -11,6 +11,7 @@ interface CustomDateRangePickerProps {
   onStartDateChange: (date: Date | undefined) => void
   onEndDateChange: (date: Date | undefined) => void
   onRangeChange?: (startDate: Date | undefined, endDate: Date | undefined) => void
+  onSyncAll?: () => void // Callback khi chọn "Tất cả"
   className?: string
   placeholder?: string
 }
@@ -21,6 +22,7 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
   onStartDateChange,
   onEndDateChange,
   onRangeChange,
+  onSyncAll,
   className = "",
   placeholder = "Chọn khoảng thời gian"
 }) => {
@@ -59,6 +61,9 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
       const start = format(startDate, 'dd/MM/yyyy', { locale: vi })
       const end = format(endDate, 'dd/MM/yyyy', { locale: vi })
       return `${start} - ${end}`
+    }
+    if (!startDate && !endDate && onSyncAll) {
+      return "Tất cả hóa đơn"
     }
     return placeholder
   }
@@ -99,7 +104,7 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
   // Áp dụng ngay khi chọn quick select
   const handleQuickSelectAndApply = (quickSelect: { start: Date, end: Date }) => {
     const { start, end } = quickSelect
-    
+
     // Set temp values trước
     setTempStartDate(format(start, 'yyyy-MM-dd'))
     setTempEndDate(format(end, 'yyyy-MM-dd'))
@@ -114,6 +119,28 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
     setIsOpen(false)
   }
 
+  // Xử lý khi chọn "Tất cả"
+  const handleSyncAll = () => {
+    // Clear temp values
+    setTempStartDate('')
+    setTempEndDate('')
+
+    // Clear actual dates và gọi callback
+    if (onRangeChange) {
+      onRangeChange(undefined, undefined)
+    } else {
+      onStartDateChange(undefined)
+      onEndDateChange(undefined)
+    }
+
+    // Gọi callback đặc biệt cho sync all
+    if (onSyncAll) {
+      onSyncAll()
+    }
+
+    setIsOpen(false)
+  }
+
   // Hủy thay đổi
   const handleCancel = () => {
     setTempStartDate(startDate ? format(startDate, 'yyyy-MM-dd') : '')
@@ -123,6 +150,11 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
 
   // Quick select options
   const quickSelects = [
+    ...(onSyncAll ? [{
+      label: 'Tất cả',
+      getValue: null, // Special case for sync all
+      isSpecial: true
+    }] : []),
     {
       label: 'Hôm nay',
       getValue: () => {
@@ -224,8 +256,18 @@ const CustomDateRangePicker: React.FC<CustomDateRangePickerProps> = ({
                 {quickSelects.map((quick, index) => (
                   <button
                     key={index}
-                    className="px-3 py-1 text-sm text-gray-600 hover:text-blue-600 hover:bg-blue-50 rounded transition-colors text-left"
-                    onClick={() => handleQuickSelectAndApply(quick.getValue())}
+                    className={`px-3 py-1 text-sm rounded transition-colors text-left ${
+                      quick.isSpecial
+                        ? 'text-orange-600 hover:text-orange-700 hover:bg-orange-50 font-medium'
+                        : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+                    }`}
+                    onClick={() => {
+                      if (quick.isSpecial) {
+                        handleSyncAll()
+                      } else {
+                        handleQuickSelectAndApply(quick.getValue!())
+                      }
+                    }}
                   >
                     {quick.label}
                   </button>

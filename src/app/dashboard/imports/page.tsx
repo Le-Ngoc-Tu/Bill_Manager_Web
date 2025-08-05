@@ -445,8 +445,12 @@ export default function ImportsPage() {
 
   // Xử lý sync hóa đơn từ n8n
   const handleSyncFromN8n = async () => {
-    if (!syncStartDate || !syncEndDate) {
-      toast.error("Vui lòng chọn khoảng thời gian để đồng bộ", {
+    // Kiểm tra nếu có một trong hai date nhưng không có cả hai
+    const hasStartDate = syncStartDate !== undefined && syncStartDate !== null
+    const hasEndDate = syncEndDate !== undefined && syncEndDate !== null
+
+    if ((hasStartDate && !hasEndDate) || (!hasStartDate && hasEndDate)) {
+      toast.error("Vui lòng chọn cả ngày bắt đầu và ngày kết thúc, hoặc chọn 'Tất cả' để đồng bộ tất cả hóa đơn", {
         className: "text-lg font-medium",
         descriptionClassName: "text-base"
       })
@@ -463,11 +467,22 @@ export default function ImportsPage() {
       return
     }
 
-    // Confirmation dialog for large date ranges
-    const daysDiff = Math.ceil((syncEndDate.getTime() - syncStartDate.getTime()) / (1000 * 60 * 60 * 24))
-    if (daysDiff > 30) {
+    // Xác định xem có phải sync all hay không
+    const isSyncAll = !hasStartDate && !hasEndDate
+
+    // Confirmation dialog for large date ranges (chỉ khi có date range)
+    if (!isSyncAll) {
+      const daysDiff = Math.ceil((syncEndDate!.getTime() - syncStartDate!.getTime()) / (1000 * 60 * 60 * 24))
+      if (daysDiff > 30) {
+        const confirmed = window.confirm(
+          `Bạn đang đồng bộ ${daysDiff} ngày dữ liệu. Quá trình này có thể mất từ vài phút đến vài chục phút tùy theo số lượng hóa đơn. Vui lòng không đóng trang trong quá trình xử lý. Bạn có chắc chắn muốn tiếp tục?`
+        )
+        if (!confirmed) return
+      }
+    } else {
+      // Confirmation cho sync all
       const confirmed = window.confirm(
-        `Bạn đang đồng bộ ${daysDiff} ngày dữ liệu. Quá trình này có thể mất từ vài phút đến vài chục phút tùy theo số lượng hóa đơn. Vui lòng không đóng trang trong quá trình xử lý. Bạn có chắc chắn muốn tiếp tục?`
+        `Bạn đang đồng bộ TẤT CẢ hóa đơn từ email. Quá trình này có thể mất rất lâu tùy theo số lượng hóa đơn trong email. Vui lòng không đóng trang trong quá trình xử lý. Bạn có chắc chắn muốn tiếp tục?`
       )
       if (!confirmed) return
     }
@@ -476,16 +491,28 @@ export default function ImportsPage() {
       setIsSyncing(true)
       setLastSyncTime(Date.now())
 
-      const startDateStr = format(syncStartDate, 'yyyy-MM-dd')
-      const endDateStr = format(syncEndDate, 'yyyy-MM-dd')
-
-      console.log(`Syncing invoices from ${startDateStr} to ${endDateStr}`)
-
       // Get company name for display
       const companyName = getAvailableCompanies().find(c => c.value === selectedCompany)?.label || selectedCompany
 
+      let startDateStr: string | undefined
+      let endDateStr: string | undefined
+      let logMessage: string
+      let toastMessage: string
+
+      if (isSyncAll) {
+        logMessage = 'Syncing all invoices from email'
+        toastMessage = `Bắt đầu đồng bộ TẤT CẢ hóa đơn ${companyName} từ email...`
+      } else {
+        startDateStr = format(syncStartDate!, 'yyyy-MM-dd')
+        endDateStr = format(syncEndDate!, 'yyyy-MM-dd')
+        logMessage = `Syncing invoices from ${startDateStr} to ${endDateStr}`
+        toastMessage = `Bắt đầu đồng bộ hóa đơn ${companyName} từ ${startDateStr} đến ${endDateStr}...`
+      }
+
+      console.log(logMessage)
+
       // Show initial progress toast with timeout warning
-      toast.info(`Bắt đầu đồng bộ hóa đơn ${companyName} từ ${startDateStr} đến ${endDateStr}...`, {
+      toast.info(toastMessage, {
         description: "Quá trình có thể mất vài phút đối với khoảng thời gian lớn. Vui lòng đợi...",
         className: "text-lg font-medium",
         descriptionClassName: "text-base",
@@ -1091,7 +1118,7 @@ export default function ImportsPage() {
                   Làm mới hóa đơn từ hệ thống
                 </DialogTitle>
                 <DialogDescription>
-                  Đồng bộ hóa đơn mới từ hệ thống n8n trong khoảng thời gian được chọn
+                  Đồng bộ hóa đơn mới từ hệ thống n8n trong khoảng thời gian được chọn, hoặc chọn "Tất cả" để đồng bộ tất cả hóa đơn từ email
                   <br />
                   <span className="text-xs text-gray-500">
                     Phím tắt: Ctrl+R để mở, ESC để đóng
@@ -1103,7 +1130,7 @@ export default function ImportsPage() {
                 {/* Date Range Picker */}
                 <div className="relative" style={{ zIndex: 9999 }}>
                   <label className="block text-sm font-medium text-gray-700 mb-2">
-                    Chọn khoảng thời gian đồng bộ
+                    Chọn khoảng thời gian đồng bộ (hoặc "Tất cả" để đồng bộ tất cả hóa đơn)
                   </label>
                   <div className="relative">
                     <CustomDateRangePicker
@@ -1114,6 +1141,11 @@ export default function ImportsPage() {
                       onRangeChange={(start, end) => {
                         setSyncStartDate(start)
                         setSyncEndDate(end)
+                      }}
+                      onSyncAll={() => {
+                        // Clear dates để đồng bộ tất cả
+                        setSyncStartDate(undefined)
+                        setSyncEndDate(undefined)
                       }}
                       className="w-full"
                       placeholder="Chọn khoảng thời gian"

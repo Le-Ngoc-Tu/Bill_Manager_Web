@@ -5,8 +5,8 @@
 
 // TypeScript interfaces for webhook communication
 export interface N8nWebhookRequest {
-  start_date: string; // Format: YYYY-MM-DD
-  end_date: string;   // Format: YYYY-MM-DD
+  start_date?: string; // Format: YYYY-MM-DD, optional - if not provided, sync all invoices
+  end_date?: string;   // Format: YYYY-MM-DD, optional - if not provided, sync all invoices
 }
 
 export interface N8nWebhookErrorItem {
@@ -94,26 +94,36 @@ const N8N_WEBHOOK_CONFIGS = {
 // console.log('Nguyên Luân URL:', N8N_WEBHOOK_CONFIGS.nguyen_luan.url);
 
 /**
- * Call n8n webhook to synchronize invoices for a date range
- * @param startDate - Start date in YYYY-MM-DD format
- * @param endDate - End date in YYYY-MM-DD format
+ * Call n8n webhook to synchronize invoices for a date range or all invoices
+ * @param startDate - Start date in YYYY-MM-DD format (optional - if not provided, sync all invoices)
+ * @param endDate - End date in YYYY-MM-DD format (optional - if not provided, sync all invoices)
  * @param company - Company to sync: 'nang_vang' or 'nguyen_luan'
  * @returns Promise<N8nWebhookResponse>
  */
 export const syncInvoicesFromN8n = async (
-  startDate: string,
-  endDate: string,
+  startDate?: string,
+  endDate?: string,
   company: 'nang_vang' | 'nguyen_luan' = 'nang_vang'
 ): Promise<N8nWebhookResponse> => {
   try {
-    // Validate date format
-    if (!isValidDateFormat(startDate) || !isValidDateFormat(endDate)) {
-      throw new N8nWebhookError('Invalid date format. Expected YYYY-MM-DD');
+    // Check if both dates are provided or both are omitted
+    const hasStartDate = startDate !== undefined && startDate !== null && startDate !== '';
+    const hasEndDate = endDate !== undefined && endDate !== null && endDate !== '';
+
+    if (hasStartDate !== hasEndDate) {
+      throw new N8nWebhookError('Both start_date and end_date must be provided together, or both omitted to sync all invoices');
     }
 
-    // Validate date range
-    if (new Date(startDate) > new Date(endDate)) {
-      throw new N8nWebhookError('Start date cannot be after end date');
+    // Validate date format only if dates are provided
+    if (hasStartDate && hasEndDate) {
+      if (!isValidDateFormat(startDate!) || !isValidDateFormat(endDate!)) {
+        throw new N8nWebhookError('Invalid date format. Expected YYYY-MM-DD');
+      }
+
+      // Validate date range
+      if (new Date(startDate!) > new Date(endDate!)) {
+        throw new N8nWebhookError('Start date cannot be after end date');
+      }
     }
 
     // Get config for selected company
@@ -122,12 +132,15 @@ export const syncInvoicesFromN8n = async (
       throw new N8nWebhookError(`Invalid company: ${company}`);
     }
 
-    const requestPayload: N8nWebhookRequest = {
-      start_date: startDate,
-      end_date: endDate
-    };
-
-    console.log(`Calling n8n webhook for ${config.name} with payload:`, requestPayload);
+    // Build request payload - only include dates if provided
+    const requestPayload: N8nWebhookRequest = {};
+    if (hasStartDate && hasEndDate) {
+      requestPayload.start_date = startDate!;
+      requestPayload.end_date = endDate!;
+      console.log(`Calling n8n webhook for ${config.name} with date range:`, requestPayload);
+    } else {
+      console.log(`Calling n8n webhook for ${config.name} to sync all invoices (no date filter)`);
+    }
     console.log('N8n webhook URL:', config.url);
     console.log('Request headers:', config.headers);
 
@@ -159,9 +172,13 @@ export const syncInvoicesFromN8n = async (
     if (!responseText || responseText.trim() === '' || responseText.trim() === '{}') {
       console.log('Empty response from n8n - no invoices to process');
       // Return a default response structure for empty results
+      const message = hasStartDate && hasEndDate
+        ? 'No invoices found in the specified date range'
+        : 'No invoices found in email';
+
       return {
         code: 200,
-        message: 'No invoices found in the specified date range',
+        message,
         data: {
           success: [],
           errors: [],
@@ -290,25 +307,38 @@ export const getAvailableCompanies = () => {
 };
 
 /**
+ * Sync all invoices from email without date filter
+ * @param company - Company to sync: 'nang_vang' or 'nguyen_luan'
+ * @returns Promise<N8nWebhookResponse>
+ */
+export const syncAllInvoicesFromN8n = async (
+  company: 'nang_vang' | 'nguyen_luan' = 'nang_vang'
+): Promise<N8nWebhookResponse> => {
+  return syncInvoicesFromN8n(undefined, undefined, company);
+};
+
+/**
  * Format webhook response for user display
  */
-export const formatWebhookResult = (response: N8nWebhookResponse): string => {
+export const formatWebhookResult = (response: N8nWebhookResponse, hasDateFilter: boolean = true): string => {
   const { summary } = response.data;
-  
+
   if (summary.total_files === 0) {
-    return 'Không tìm thấy hóa đơn nào trong khoảng thời gian đã chọn.';
+    return hasDateFilter
+      ? 'Không tìm thấy hóa đơn nào trong khoảng thời gian đã chọn.'
+      : 'Không tìm thấy hóa đơn nào trong email.';
   }
 
   const parts = [];
-  
+
   if (summary.success_count > 0) {
     parts.push(`${summary.success_count} hóa đơn mới`);
   }
-  
+
   if (summary.duplicate_count > 0) {
     parts.push(`${summary.duplicate_count} hóa đơn trùng lặp`);
   }
-  
+
   if (summary.failed_count > 0) {
     parts.push(`${summary.failed_count} hóa đơn lỗi`);
   }
