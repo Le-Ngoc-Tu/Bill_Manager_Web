@@ -64,6 +64,7 @@ const importFormSchema = z.object({
   }),
   description: z.string().optional(),
   note: z.string().optional(),
+  invoice_type: z.enum(['CP', 'HH', 'HH/CP']).optional(),
   details: z.array(importDetailSchema).min(1, "Phải có ít nhất một mặt hàng"),
   // Thêm cờ để đánh dấu người dùng đã tự chỉnh sửa các trường tổng tiền
   is_invoice_totals_manually_edited: z.boolean().optional().default(false),
@@ -1682,6 +1683,32 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
           </div>
         </div>
 
+        {/* Loại hóa đơn - chỉ hiển thị khi edit */}
+        {mode === "edit" && (
+          <div className="flex flex-wrap items-center">
+            <Label htmlFor="invoice_type" className="text-sm md:text-base font-bold mr-2 min-w-[90px] sm:min-w-0">Loại hóa đơn:</Label>
+            <div className="flex-1">
+              <Controller
+                name="invoice_type"
+                control={form.control}
+                render={({ field }) => (
+                  <select
+                    {...field}
+                    value={field.value || ''}
+                    className="h-8 md:h-10 text-sm md:text-base w-full border border-gray-300 rounded-md px-3 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                  >
+                    <option value="CP">CP</option>
+                    <option value="HH">HH</option>
+                    <option value="HH/CP">HH/CP</option>
+                  </select>
+                )}
+              />
+              {isSubmitted && form.formState.errors.invoice_type && (
+                <p className="text-red-500 text-xs mt-1">{form.formState.errors.invoice_type.message}</p>
+              )}
+            </div>
+          </div>
+        )}
 
       </div>
 

@@ -898,6 +898,20 @@ export default function ImportsPage() {
                       <p className="text-base md:text-xl font-bold mr-2">Ngày hóa đơn:</p>
                       <p className="text-base md:text-xl">{format(new Date(selectedImport.invoice_date), 'dd/MM/yyyy')}</p>
                     </div>
+                    <div className="flex items-center">
+                      <p className="text-base md:text-xl font-bold mr-2">Loại hóa đơn:</p>
+                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${
+                        selectedImport.invoice_type === 'CP' ? 'text-orange-600 bg-orange-100' :
+                        selectedImport.invoice_type === 'HH' ? 'text-blue-600 bg-blue-100' :
+                        selectedImport.invoice_type === 'HH/CP' ? 'text-purple-600 bg-purple-100' :
+                        'text-gray-500 bg-gray-100'
+                      }`}>
+                        {selectedImport.invoice_type === 'CP' ? 'CP' :
+                         selectedImport.invoice_type === 'HH' ? 'HH' :
+                         selectedImport.invoice_type === 'HH/CP' ? 'HH/CP' :
+                         'Chưa phân loại'}
+                      </span>
+                    </div>
                   </div>
 
                   {/* Thông tin người bán và người mua - hiển thị theo chiều ngang */}

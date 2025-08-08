@@ -30,6 +30,7 @@ export interface ExportInvoice {
   total_tax: number;
   total_after_tax: number;
   note?: string;
+  invoice_type?: 'CP' | 'HH' | 'HH/CP' | null;
   created_by?: number;
   createdAt: string;
   updatedAt: string;
@@ -63,6 +64,7 @@ export interface ExportFormData {
   invoice_date: Date;
   description?: string;
   note?: string;
+  invoice_type?: 'CP' | 'HH' | 'HH/CP' | null;
   details: ExportDetail[];
   // Added supplier/customer info at invoice level
   supplier_id?: number | null;

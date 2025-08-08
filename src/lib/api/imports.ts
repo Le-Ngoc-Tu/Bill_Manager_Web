@@ -24,6 +24,7 @@ export interface ImportInvoice {
   invoice_number: string;
   invoice_date: string;
   description?: string;
+  invoice_type?: 'CP' | 'HH' | 'HH/CP' | null;
   total_before_tax: number;
   total_tax: number;
   total_after_tax: number;
@@ -61,6 +62,7 @@ export interface ImportFormData {
   invoice_date: Date;
   description?: string;
   note?: string;
+  invoice_type?: 'CP' | 'HH' | 'HH/CP' | null;
   details: ImportDetail[];
   // Added supplier/customer info at invoice level
   supplier_id?: number | null;

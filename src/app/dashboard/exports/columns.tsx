@@ -83,6 +83,46 @@ export const getColumns = ({ onView, onEdit, onDelete, onViewPdf, onDownloadXml,
     },
   },
   {
+    accessorKey: "invoice_type",
+    header: ({ column }) => {
+      return (
+        <div className="text-center">
+          <Button
+            variant="ghost"
+            onClick={() => column.toggleSorting(column.getIsSorted() === "asc")}
+            className="w-full hover:bg-red-800 hover:text-white"
+          >
+            Loại hóa đơn
+            <ArrowUpDown className="ml-2 h-4 w-4" />
+          </Button>
+        </div>
+      )
+    },
+    cell: ({ row }) => {
+      const invoiceType = row.getValue("invoice_type") as string | null
+      const getTypeDisplay = (type: string | null) => {
+        switch (type) {
+          case 'CP': return { text: 'CP', color: 'text-orange-600 bg-orange-50' }
+          case 'HH': return { text: 'HH', color: 'text-blue-600 bg-blue-50' }
+          case 'HH/CP': return { text: 'HH/CP', color: 'text-purple-600 bg-purple-50' }
+          default: return { text: 'Chưa phân loại', color: 'text-gray-500 bg-gray-50' }
+        }
+      }
+      const typeInfo = getTypeDisplay(invoiceType)
+      return (
+        <div className="text-center">
+          <span className={`px-2 py-1 rounded-full text-sm font-medium ${typeInfo.color}`}>
+            {typeInfo.text}
+          </span>
+        </div>
+      )
+    },
+    meta: {
+      columnName: "Loại hóa đơn"
+    },
+    enableHiding: true,
+  },
+  {
     accessorKey: "invoice_date",
     header: ({ column }) => {
       return (
