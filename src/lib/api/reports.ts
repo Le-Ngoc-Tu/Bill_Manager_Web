@@ -68,3 +68,211 @@ export const getExpenseReport = async (searchParams?: Record<string, string>) =>
     throw error;
   }
 };
+
+// Xuất báo cáo chi tiết nhập kho
+export const exportImportDetailReport = async (
+  supplierId?: number,
+  startDate?: string,
+  endDate?: string
+) => {
+  try {
+    const params = new URLSearchParams();
+
+    if (supplierId) {
+      params.append('supplier_id', supplierId.toString());
+    }
+
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await apiClient.get(`/reports/import-detail-export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+
+    // Tạo URL để download file
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const url = window.URL.createObjectURL(blob);
+
+    const filename = `BANGKECHITIET_NHAPKHO.xlsx`;
+
+    // Tạo link download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error exporting import detail report:", error);
+    throw error;
+  }
+};
+
+// Xuất báo cáo tổng hợp nhập kho
+export const exportImportSummaryReport = async (
+  supplierId?: number,
+  startDate?: string,
+  endDate?: string
+) => {
+  try {
+    const params = new URLSearchParams();
+
+    if (supplierId) {
+      params.append('supplier_id', supplierId.toString());
+    }
+
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await apiClient.get(`/reports/import-summary-export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+
+    // Tạo URL để download file
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const url = window.URL.createObjectURL(blob);
+
+    const filename = `BANGKETONGHOP_NHAPKHO.xlsx`;
+
+    // Tạo link download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error exporting import summary report:", error);
+    throw error;
+  }
+};
+
+// Xuất báo cáo chi tiết xuất kho
+export const exportExportDetailReport = async (
+  supplierId?: number,
+  startDate?: string,
+  endDate?: string
+) => {
+  try {
+    const params = new URLSearchParams();
+
+    if (supplierId) {
+      params.append('supplier_id', supplierId.toString());
+    }
+
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await apiClient.get(`/reports/export-detail-export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+
+    // Tạo URL để download file
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const url = window.URL.createObjectURL(blob);
+
+    const filename = `BANGKECHITIET_XUATKHO.xlsx`;
+
+    // Tạo link download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error exporting export detail report:", error);
+    throw error;
+  }
+};
+
+// Xuất báo cáo tổng hợp xuất kho
+export const exportExportSummaryReport = async (
+  supplierId?: number,
+  startDate?: string,
+  endDate?: string
+) => {
+  try {
+    const params = new URLSearchParams();
+
+    if (supplierId) {
+      params.append('supplier_id', supplierId.toString());
+    }
+
+    if (startDate) {
+      params.append('start_date', startDate);
+    }
+
+    if (endDate) {
+      params.append('end_date', endDate);
+    }
+
+    const response = await apiClient.get(`/reports/export-summary-export?${params.toString()}`, {
+      responseType: 'blob'
+    });
+
+    // Tạo URL để download file
+    const blob = new Blob([response.data], {
+      type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+    });
+
+    const url = window.URL.createObjectURL(blob);
+
+    const filename = `BANGKETONGHOP_XUATKHO.xlsx`;
+
+    // Tạo link download
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+
+    // Cleanup
+    document.body.removeChild(link);
+    window.URL.revokeObjectURL(url);
+
+    return { success: true };
+  } catch (error) {
+    console.error("Error exporting export summary report:", error);
+    throw error;
+  }
+};

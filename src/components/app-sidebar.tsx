@@ -2,7 +2,7 @@
 
 import * as React from "react"
 import Image from "next/image"
-import { FaFileInvoice, FaFileExport, FaBoxOpen, FaUserTie, FaUsers, FaUserCog, FaHistory, FaChartBar, FaMoneyBillWave } from "react-icons/fa"
+import { FaFileInvoice, FaFileExport, FaBoxOpen, FaUserTie, FaUsers, FaUserCog, FaHistory, FaChartBar, FaMoneyBillWave, FaFileExcel } from "react-icons/fa"
 
 import { NavMain } from "@/components/nav-main"
 import { NavUser } from "@/components/nav-user"
@@ -56,6 +56,11 @@ const data = {
       title: "Báo cáo chi phí",
       url: "/dashboard/reports/expenses",
       icon: FaChartBar,
+    },
+    {
+      title: "Xuất báo cáo thống kê",
+      url: "/dashboard/reports/statistics",
+      icon: FaFileExcel,
     },
     {
       title: "Lịch sử",

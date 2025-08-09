@@ -1658,6 +1658,9 @@ export function ImportForm({ mode, initialData, onSubmit, onCancel }: ImportForm
             {isSubmitted && form.formState.errors.invoice_number && (
               <p className="text-red-500 text-xs mt-1">{form.formState.errors.invoice_number.message}</p>
             )}
+            <p className="text-blue-700 text-xs mt-1 font-semibold bg-blue-50 p-2 rounded border-l-4 border-blue-400">
+              💡 Nhập theo cấu trúc: <span className="font-bold text-blue-800">{"{Ký hiệu hóa đơn}_{Số hóa đơn}"}</span> để hệ thống lưu trữ đúng khi thống kê báo cáo
+            </p>
           </div>
         </div>
 
